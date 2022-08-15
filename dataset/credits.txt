@@ -1,0 +1,21 @@
+turtle - https://free3d.com/3d-model/sea-turtle-v1--175922.html
+baseball - https://www.cgtrader.com/free-3d-models/sports/equipment/game-ready-worn-baseball-ball
+running shoe - https://app.gazebosim.org/GoogleResearch/fuel/models/ASICS_GELBlur33_20_GS_BlackWhiteSafety_Orange
+orange - https://free3d.com/3d-model/-orange--470103.html
+german shepherd - https://www.cgtrader.com/free-3d-models/animals/other/german-shepherd-dog-203601c4-4783-40e5-ab32-afa14e042dd5
+clownfish - https://sketchfab.com/3d-models/clownfish-47ba2679d91a4f14b3fc0bf8e3805af5
+purse - https://www.cgtrader.com/free-3d-models/household/other/small-bag-wallet
+teddy - https://free3d.com/3d-model/teddy-bear-sg-v1--215992.html
+camaro - https://free3d.com/3d-model/chevrolet-camaro-46813.html
+taxi - https://free3d.com/3d-model/taxi-v2--375169.html
+jeep - https://www.cgtrader.com/free-3d-models/car/suv/uaz-3d
+crocodile - https://free3d.com/3d-model/crocodile-v1--688517.html
+orca - https://www.cgtrader.com/items/3331128/download-page
+barrel - https://free3d.com/3d-model/barrel-7685.html
+rugby ball - https://free3d.com/3d-model/rugby-ball-v1--585369.html
+
+large textures:
+
+running show
+orca
+baseball
