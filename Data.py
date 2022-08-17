@@ -13,7 +13,7 @@ class Model3D:
 
         self.raw_texture = Model3D._get_image(absolute_model_path)
         self.obj = Obj.open(os.path.join(absolute_model_path, "{}.obj".format(self.name)))
-        self.labels = Model3D.load_labels(absolute_model_path)
+        self.labels = Model3D._load_labels(absolute_model_path)
 
     def __str__(self):
         return "{}: labels {}".format(self.name, self.labels)
@@ -44,7 +44,7 @@ class Model3D:
         raise ValueError("No jpg or png files found in the given directory!")
 
     @staticmethod
-    def load_labels(path):
+    def _load_labels(path):
         if not os.path.isdir(path):
             raise ValueError("The given absolute path is not a directory!")
 
@@ -84,6 +84,7 @@ def load_dataset(data_dir):
 
     for model in models:
         print(str(model))
+
 
 if __name__ == '__main__':
     load_dataset(DATA_DIR)
