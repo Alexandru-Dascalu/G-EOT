@@ -1,0 +1,6 @@
+model_checkpoint_path: "netcifar100.ckpt-32401"
+all_model_checkpoint_paths: "netcifar100.ckpt-31201"
+all_model_checkpoint_paths: "netcifar100.ckpt-31501"
+all_model_checkpoint_paths: "netcifar100.ckpt-31801"
+all_model_checkpoint_paths: "netcifar100.ckpt-32101"
+all_model_checkpoint_paths: "netcifar100.ckpt-32401"
