@@ -32,7 +32,7 @@ class Model3D:
         raw_image = np.array(texture_image)
         texture_image.close()
 
-        return raw_image
+        return raw_image[:, :, :3]
 
     @staticmethod
     def _get_image_path(path):
