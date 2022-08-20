@@ -440,18 +440,18 @@ def create_simulatorG_SimpleNet(images, step, ifTest):
     return logits.output
 
 
-HParamCIFAR10 = {'BatchSize': 8,
-                 'NumSubnets': 10,
-                 'NumPredictor': 1,
-                 'NumGenerator': 1,
-                 'NoiseDecay': 1e-5,
-                 'LearningRate': 1e-3,
-                 'MinLearningRate': 2 * 1e-5,
-                 'DecayRate': 0.9,
-                 'DecayAfter': 300,
-                 'ValidateAfter': 300,
-                 'TestSteps': 50,
-                 'TotalSteps': 30000}
+hyper_params_imagenet = {'BatchSize': 8,
+                         'NumSubnets': 10,
+                         'NumPredictor': 1,
+                         'NumGenerator': 1,
+                         'NoiseDecay': 1e-5,
+                         'LearningRate': 1e-3,
+                         'MinLearningRate': 2 * 1e-5,
+                         'DecayRate': 0.9,
+                         'DecayAfter': 300,
+                         'ValidateAfter': 300,
+                         'TestSteps': 50,
+                         'TotalSteps': 30000}
 
 
 class AdvNet(Nets.Net):
@@ -460,7 +460,7 @@ class AdvNet(Nets.Net):
         Nets.Net.__init__(self)
 
         if hyper_params is None:
-            hyper_params = HParamCIFAR10
+            hyper_params = hyper_params_imagenet
 
         self._init = False
         self._hyper_params = hyper_params
@@ -819,9 +819,7 @@ if __name__ == '__main__':
     tf.compat.v1.enable_eager_execution()
 
     net = AdvNet([2048, 2048, 3], enemy=enemy)
-    data_generator = Data.get_adversarial_data_generators(batch_size=HParamCIFAR10['BatchSize'])
+    data_generator = Data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
 
     net.train(data_generator, path_save='./AttackCIFAR10/netcifar10.ckpt')
     net.plot_training_history("Adversarial CIFAR10")
-
-

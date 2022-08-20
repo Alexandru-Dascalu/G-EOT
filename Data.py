@@ -32,6 +32,7 @@ class Model3D:
         raw_image = np.array(texture_image)
         texture_image.close()
 
+        # some raw textures have an alfa channel too, we only want three colour channels
         return raw_image[:, :, :3]
 
     @staticmethod
