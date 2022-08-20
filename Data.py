@@ -29,7 +29,7 @@ class Model3D:
         texture_image = Image.open(image_path)
         # necessary to match UV map, otherwise rendered object will have the wrong texture
         texture_image = texture_image.transpose(Image.FLIP_TOP_BOTTOM)
-        raw_image = texture_image.tobytes()
+        raw_image = np.array(texture_image)
         texture_image.close()
 
         return raw_image

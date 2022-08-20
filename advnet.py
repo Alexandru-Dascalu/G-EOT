@@ -9,6 +9,7 @@ import tensorflow as tf
 
 import matplotlib.pyplot as plt
 
+import Data
 import Layers
 import Nets
 import target_model
@@ -75,6 +76,7 @@ def create_generator(images, targets, num_experts, step, ifTest, layers):
                           poolType=Layers.MaxPool, poolPadding='SAME',
                           name='G_SepConv384Shortcut', dtype=tf.float32)
     layers.append(toadd)
+    print(toadd.output.shape)
 
     net = Layers.Activation(added, activation=Layers.ReLU, name='G_ReLU384')
     layers.append(net)
@@ -438,7 +440,7 @@ def create_simulatorG_SimpleNet(images, step, ifTest):
     return logits.output
 
 
-HParamCIFAR10 = {'BatchSize': 128,
+HParamCIFAR10 = {'BatchSize': 8,
                  'NumSubnets': 10,
                  'NumPredictor': 1,
                  'NumGenerator': 1,
@@ -478,30 +480,30 @@ class AdvNet(Nets.Net):
             self._step = tf.Variable(0, name='step', trainable=False, dtype=tf.int32)
 
             # Inputs
-            self._images = tf.compat.v1.placeholder(dtype=tf.float32,
-                                                    shape=[self._hyper_params['BatchSize']] + image_shape,
-                                                    name='CIFAR10_images')
+            self._textures = tf.compat.v1.placeholder(dtype=tf.float32,
+                                                      shape=[self._hyper_params['BatchSize']] + image_shape,
+                                                      name='textures')
             self._labels = tf.compat.v1.placeholder(dtype=tf.int64, shape=[self._hyper_params['BatchSize']],
-                                                    name='CIFAR10_labels')
+                                                    name='imagenet_labels')
             self._adversarial_targets = tf.compat.v1.placeholder(dtype=tf.int64,
                                                                  shape=[self._hyper_params['BatchSize']],
-                                                                 name='CIFAR10_targets')
+                                                                 name='target_labels')
 
             # define generator
             with tf.compat.v1.variable_scope('Generator', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._generator = create_generator(self._images, self._adversarial_targets,
+                self._generator = create_generator(self._textures, self._adversarial_targets,
                                                    self._hyper_params['NumSubnets'], self._step,
                                                    self._ifTest, self._layers)
             self._noises = self._generator
-            self._adversarial_images = self._noises + self._images
+            self._adversarial_textures = self._noises + self._textures
 
             # define simulator
             with tf.compat.v1.variable_scope('Predictor', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._simulator = create_simulator_SimpleNet(self._images, self._step, self._ifTest, self._layers)
+                self._simulator = create_simulator_SimpleNet(self._textures, self._step, self._ifTest, self._layers)
                 # what is the point of this??? Why is the generator training against a different simulator, which is
                 # not trained to match the target model? Why is one simulator trained on normal images, and another on
                 # adversarial images?
-                self._simulatorG = create_simulatorG_SimpleNet(self._adversarial_images, self._step, self._ifTest)
+                self._simulatorG = create_simulatorG_SimpleNet(self._adversarial_textures, self._step, self._ifTest)
 
             # define inference as hard label prediction of simulator on natural images
             self._inference = self.inference(self._simulator)
@@ -541,7 +543,7 @@ class AdvNet(Nets.Net):
         self._layers.append(net)
         return net.output
 
-    def train(self, training_data_generator, test_data_generator, path_load=None, path_save=None):
+    def train(self, data_generator, path_load=None, path_save=None):
         with self._graph.as_default():
             self._lr = tf.compat.v1.train.exponential_decay(self._hyper_params['LearningRate'],
                                                             global_step=self._step,
@@ -572,10 +574,10 @@ class AdvNet(Nets.Net):
                 # warm up simulator to match predictions of target model on clean images
                 print('Warming up. ')
                 for idx in range(300):
-                    data, _, _ = next(training_data_generator)
+                    data, _, _ = next(data_generator)
                     target_model_label = np.array(self._enemy.infer(data))
                     loss, accuracy, _ = self._sess.run([self._loss_simulator, self._accuracy, self._optimizerS],
-                                                       feed_dict={self._images: data,
+                                                       feed_dict={self._textures: data,
                                                                   self._labels: target_model_label})
                     print('\rSimulator => Step: ', idx - 300,
                           '; Loss: %.3f' % loss,
@@ -585,17 +587,17 @@ class AdvNet(Nets.Net):
                 # evaluate warmed up simulator on test data
                 warmupAccu = 0.0
                 for idx in range(50):
-                    data, _, _ = next(test_data_generator)
+                    data, _, _ = next(data_generator)
                     target_model_label = np.array(self._enemy.infer(data))
                     loss, accuracy, _ = \
                         self._sess.run([self._loss_simulator, self._accuracy, self._optimizerS],
-                                       feed_dict={self._images: data,
+                                       feed_dict={self._textures: data,
                                                   self._labels: target_model_label})
                     warmupAccu += accuracy
                 warmupAccu = warmupAccu / 50
                 print('\nWarmup Accuracy: ', warmupAccu)
 
-            self.evaluate(test_data_generator)
+            self.evaluate(data_generator)
 
             self._sess.run([self._phaseTrain])
             if path_save is not None:
@@ -609,7 +611,7 @@ class AdvNet(Nets.Net):
                 # train simulator for a couple of steps
                 for _ in range(self._hyper_params['NumPredictor']):
                     # ground truth labels are not needed for training the simulator
-                    data, _, target_label = next(training_data_generator)
+                    data, _, target_label = next(data_generator)
                     # adds Random uniform noise to normal data
                     data = data + (np.random.rand(self._hyper_params['BatchSize'], 32, 32, 3) - 0.5) * 2 * NoiseRange
 
@@ -618,22 +620,22 @@ class AdvNet(Nets.Net):
                     target_model_labels = self._enemy.infer(data)
                     loss, accuracy, globalStep, _ = self._sess.run([self._loss_simulator, self._accuracy, self._step,
                                                                     self._optimizerS],
-                                                                   feed_dict={self._images: data,
+                                                                   feed_dict={self._textures: data,
                                                                               self._labels: target_model_labels})
                     print('\rSimulator => Step: ', globalStep,
                           '; Loss: %.3f' % loss,
                           '; Accuracy: %.3f' % accuracy,
                           end='')
 
-                    adversarial_images = self._sess.run(self._adversarial_images,
-                                                        feed_dict={self._images: data,
+                    adversarial_images = self._sess.run(self._adversarial_textures,
+                                                        feed_dict={self._textures: data,
                                                                    self._adversarial_targets: target_label})
                     # perform one optimisation step to train simulator so it has the same predictions as the target
                     # model does on adversarial images
                     target_model_labels = self._enemy.infer(adversarial_images)
                     loss, accuracy, globalStep, _ = self._sess.run([self._loss_simulator, self._accuracy, self._step,
                                                                     self._optimizerS],
-                                                                   feed_dict={self._images: adversarial_images,
+                                                                   feed_dict={self._textures: adversarial_images,
                                                                               self._labels: target_model_labels})
 
                     self.simulator_loss_history.append(loss)
@@ -645,7 +647,7 @@ class AdvNet(Nets.Net):
 
                 # train generator for a couple of steps
                 for _ in range(self._hyper_params['NumGenerator']):
-                    data, _, target_label = next(training_data_generator)
+                    data, _, target_label = next(data_generator)
                     target_model_labels = self._enemy.infer(data)
 
                     # make sure target label is different than what the target model already outputs for that image
@@ -657,9 +659,9 @@ class AdvNet(Nets.Net):
                             target_label[idx] = tmp
 
                     loss, adversarial_images, globalStep, _ = self._sess.run([self._loss_generator,
-                                                                              self._adversarial_images,
+                                                                              self._adversarial_textures,
                                                                               self._step, self._optimizerG],
-                                                                             feed_dict={self._images: data,
+                                                                             feed_dict={self._textures: data,
                                                                                         self._adversarial_targets: target_label})
                     adversarial_predictions = self._enemy.infer(adversarial_images)
                     tfr = np.mean(target_label == adversarial_predictions)
@@ -675,7 +677,7 @@ class AdvNet(Nets.Net):
 
                 # evaluate on test every so ften
                 if globalStep % self._hyper_params['ValidateAfter'] == 0:
-                    self.evaluate(test_data_generator)
+                    self.evaluate(data_generator)
                     if path_save is not None:
                         self.save(path_save)
                         np.savez("./AttackCIFAR10/training_history", self.simulator_loss_history,
@@ -705,8 +707,8 @@ class AdvNet(Nets.Net):
                         tmp = random.randint(0, 9)
                     target_labels[idx] = tmp
 
-            loss, adversarial_images = self._sess.run([self._loss_generator, self._adversarial_images],
-                                                      feed_dict={self._images: data,
+            loss, adversarial_images = self._sess.run([self._loss_generator, self._adversarial_textures],
+                                                      feed_dict={self._textures: data,
                                                                  self._adversarial_targets: target_labels})
 
             adversarial_images = adversarial_images.clip(0, 255).astype(np.uint8)
@@ -744,8 +746,8 @@ class AdvNet(Nets.Net):
                     tmp = random.randint(0, 9)
                 target[idx] = tmp
 
-        loss, adversarial_images = self._sess.run([self._loss_generator, self._adversarial_images],
-                                                  feed_dict={self._images: data,
+        loss, adversarial_images = self._sess.run([self._loss_generator, self._adversarial_textures],
+                                                  feed_dict={self._textures: data,
                                                              self._adversarial_targets: target})
         adversarial_images = adversarial_images.clip(0, 255).astype(np.uint8)
         results = self._enemy.infer(adversarial_images)
@@ -789,8 +791,8 @@ class AdvNet(Nets.Net):
         tmptarget = np.array(tmptarget)
 
         adversary = \
-            self._sess.run(self._adversarial_images,
-                           feed_dict={self._images: tmpdata,
+            self._sess.run(self._adversarial_textures,
+                           feed_dict={self._textures: tmpdata,
                                       self._adversarial_targets: tmptarget})
         adversary = adversary.clip(0, 255).astype(np.uint8)
 
@@ -811,16 +813,15 @@ class AdvNet(Nets.Net):
 
 
 if __name__ == '__main__':
-    enemy = target_model.NetImageNet([32, 32, 3], 2)
+    enemy = target_model.NetImageNet([299, 299, 3], 2)
     tf.compat.v1.disable_eager_execution()
-    enemy.load('./ClassifyCIFAR10/netcifar10.ckpt-29701')
+    enemy.load('./TargetModel/netcifar100.ckpt-32401')
     tf.compat.v1.enable_eager_execution()
 
-    net = AdvNet([32, 32, 3], enemy=enemy)
-    batchTrain, batchTest = target_model.get_adversarial_data_generators(batch_size=HParamCIFAR10['BatchSize'],
-                                                                         image_size=[32, 32, 3])
+    net = AdvNet([2048, 2048, 3], enemy=enemy)
+    data_generator = Data.get_adversarial_data_generators(batch_size=HParamCIFAR10['BatchSize'])
 
-    net.train(batchTrain, batchTest, path_save='./AttackCIFAR10/netcifar10.ckpt')
+    net.train(data_generator, path_save='./AttackCIFAR10/netcifar10.ckpt')
     net.plot_training_history("Adversarial CIFAR10")
 
 

@@ -77,7 +77,7 @@ class Net:
         """
         pass
 
-    def train(self, training_data_generator, test_data_generator, path_load=None, path_save=None):
+    def train(self, training_data_generator, path_load=None, path_save=None):
         """
         Trains network according the the hyper params of the Net subclass.
 
@@ -86,10 +86,6 @@ class Net:
         training_data_generator : generator
             Generator which returns each step a tuple with two tensors: the first is the mini-batch of training images,
             and the second is a list of their coresponding hard labels.
-        test_data_generator : generator
-            Generator which returns each step a tuple with two tensors: the first is the mini-batch of test images, and
-            the second is a list of their coresponding hard labels. Every so often, the model will be evaluated on test
-            data between training steps.
         path_load : string
             Path to checkpoint with weights of pre-trained model that we want to further train.
         path_save : string
