@@ -832,4 +832,4 @@ if __name__ == '__main__':
     data_generator = Data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
 
     net.train(data_generator, path_save='./AttackCIFAR10/netcifar10.ckpt')
-    net.plot_training_history("Adversarial CIFAR10")
+    net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
