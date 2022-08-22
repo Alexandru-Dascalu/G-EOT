@@ -15,7 +15,6 @@ class Net:
         self._body = None
         self._inference = None
         self._loss = None
-        self._update_ops = None
         self._saver = None
 
         self._graph = tf.Graph()

@@ -503,14 +503,8 @@ class AdvNet(Nets.Net):
             self._loss = 0
             for elem in self._layers:
                 if len(elem.losses) > 0:
-                    for tmp in elem.losses:
-                        self._loss += tmp
-
-            self._updateOps = []
-            for elem in self._layers:
-                if len(elem.update_ops) > 0:
-                    for tmp in elem.update_ops:
-                        self._updateOps.append(tmp)
+                    for loss in elem.losses:
+                        self._loss += loss
 
             # simulator loss matches simulator output against output of target model
             self._loss_simulator = self.loss(self._simulator, self._labels, name='lossP') + self._loss
