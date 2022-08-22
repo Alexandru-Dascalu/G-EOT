@@ -514,8 +514,6 @@ class AdvNet(Nets.Net):
                 input_tensor=tf.norm(tensor=self._noises)) + self._loss
 
             print(self.summary)
-            print("\n Begin Training: \n")
-
             # Saver
             self._saver = tf.compat.v1.train.Saver(max_to_keep=5)
 
@@ -548,6 +546,7 @@ class AdvNet(Nets.Net):
         return net.output
 
     def train(self, data_generator, path_load=None, path_save=None):
+        print("\n Begin Training: \n")
         with self._graph.as_default():
             self._lr = tf.compat.v1.train.exponential_decay(self._hyper_params['LearningRate'],
                                                             global_step=self._step,
