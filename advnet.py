@@ -456,7 +456,7 @@ hyper_params_imagenet = {'BatchSize': 8,
 
 class AdvNet(Nets.Net):
 
-    def __init__(self, image_shape, enemy, hyper_params=None):
+    def __init__(self, image_shape, enemy, architecture, num_middle=2, hyper_params=None):
         Nets.Net.__init__(self)
 
         if hyper_params is None:
@@ -464,20 +464,10 @@ class AdvNet(Nets.Net):
 
         self._init = False
         self._hyper_params = hyper_params
-        self._graph = tf.Graph()
-        self._sess = tf.compat.v1.Session(graph=self._graph)
 
         # the targeted neural network model
         self._enemy = enemy
-
         with self._graph.as_default():
-            # variable to keep check if network is being tested or trained
-            self._ifTest = tf.Variable(False, name='ifTest', trainable=False, dtype=tf.bool)
-            # define operations to set ifTest variable
-            self._phaseTrain = tf.compat.v1.assign(self._ifTest, False)
-            self._phaseTest = tf.compat.v1.assign(self._ifTest, True)
-
-            self._step = tf.Variable(0, name='step', trainable=False, dtype=tf.int32)
 
             # Inputs
             self._textures = tf.compat.v1.placeholder(dtype=tf.float32,
@@ -499,11 +489,11 @@ class AdvNet(Nets.Net):
 
             # define simulator
             with tf.compat.v1.variable_scope('Predictor', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._simulator = create_simulator_SimpleNet(self._textures, self._step, self._ifTest, self._layers)
+                self._simulator = self.body(self._textures, architecture, num_middle, for_generator=False)
                 # what is the point of this??? Why is the generator training against a different simulator, which is
                 # not trained to match the target model? Why is one simulator trained on normal images, and another on
                 # adversarial images?
-                self._simulatorG = create_simulatorG_SimpleNet(self._adversarial_textures, self._step, self._ifTest)
+                self._simulatorG = self.body(self._adversarial_textures, architecture, num_middle, for_generator=True)
 
             # define inference as hard label prediction of simulator on natural images
             self._inference = self.inference(self._simulator)
@@ -534,6 +524,26 @@ class AdvNet(Nets.Net):
 
             # Saver
             self._saver = tf.compat.v1.train.Saver(max_to_keep=5)
+
+    def body(self, images, architecture, num_middle=2, for_generator=False):
+        # define body of simulator
+        net_output = super().body(images, architecture, num_middle, for_generator)
+        logits = Layers.FullyConnected(net_output, outputSize=1000, weightInit=Layers.XavierInit, wd=wd,
+                                       biasInit=Layers.ConstInit(0.0), activation=Layers.Linear,
+                                       reuse=tf.compat.v1.AUTO_REUSE,
+                                       name='P_FC_classes', dtype=tf.float32)
+        if not for_generator:
+            self._layers.append(logits)
+
+        return logits.output
+
+    def preproc(self, images):
+        # normalise images fed into the simulator
+        clipped = tf.clip_by_value(images, 0, 255)
+        casted = tf.cast(clipped, tf.float32)
+        standardized = tf.identity(casted / 127.5 - 1.0, name='training_standardized')
+
+        return standardized
 
     def inference(self, logits):
         return tf.argmax(input=logits, axis=-1, name='inference')
@@ -813,12 +823,12 @@ class AdvNet(Nets.Net):
 
 
 if __name__ == '__main__':
-    enemy = target_model.NetImageNet([299, 299, 3], 2)
+    enemy = target_model.NetImageNet([299, 299, 3], "SmallNet")
     tf.compat.v1.disable_eager_execution()
     enemy.load('./TargetModel/netcifar100.ckpt-32401')
     tf.compat.v1.enable_eager_execution()
 
-    net = AdvNet([2048, 2048, 3], enemy=enemy)
+    net = AdvNet([2048, 2048, 3], enemy, "SimpleNet")
     data_generator = Data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
 
     net.train(data_generator, path_save='./AttackCIFAR10/netcifar10.ckpt')

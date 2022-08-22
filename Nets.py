@@ -18,6 +18,18 @@ class Net:
         self._updataOp = None
         self._saver = None
 
+        self._graph = tf.Graph()
+        self._sess = tf.compat.v1.Session(graph=self._graph)
+
+        with self._graph.as_default():
+            # variable to keep check if network is being tested or trained
+            self._ifTest = tf.Variable(False, name='ifTest', trainable=False, dtype=tf.bool)
+            # define operations to set ifTest variable
+            self._phaseTrain = tf.compat.v1.assign(self._ifTest, False)
+            self._phaseTest = tf.compat.v1.assign(self._ifTest, True)
+
+            self._step = tf.Variable(0, name='step', trainable=False, dtype=tf.int32)
+
         self.generator_loss_history = []
         self.generator_accuracy_history = []
         self.simulator_loss_history = []
@@ -25,20 +37,54 @@ class Net:
         self.test_loss_history = []
         self.test_accuracy_history = []
 
-    def body(self, images):
+    def body(self, images, architecture, num_middle=2, for_generator=False):
         """
         Defines the body of the NN and adds all layers to the layers list of the NN.
 
         Parameters
         ----------
         images : Tensor
-            Tensor representing the minibatch of images that the NN works on.
+            Tensor representing the minibatch of images that the NN works on. They must not be normalised, and have
+            values between 0 and 255.
+        architecture : str
+            String naming the architecture to use for the simulator of this model.
+        num_middle : int
+            Number used if architecture is Xception to control how deep the network is.
+        for_generator : bool
+            If this simulator is duplicate, with the same weights, to have the generator output as input. Used for the
+            generator loss.
 
         Returns
         ----------
         outputs
-            Output of NN as a Tensor. Is it always logits?
+            Output of NN as a Tensor.
         """
+        # preprocess images
+        standardized = self.preproc(images)
+
+        # when we duplicate the simulator, with the same weights, and tie it to the generator output, we do not want to
+        # double the regularisation losses for each layer. Therefore, we pass in an empty list, so that layers are not
+        # added a second time to self._layers. If subclass is a target model, this argument should always be False
+        if for_generator:
+            layers = []
+        else:
+            layers = self._layers
+
+        if architecture == "SimpleNet":
+            net = SimpleNet(standardized, self._step, self._ifTest, layers)
+        elif architecture == "SmallNet":
+            net = SmallNet(standardized, self._step, self._ifTest, layers)
+        elif architecture == "ConcatNet":
+            net = ConcatNet(standardized, self._step, self._ifTest, layers)
+        elif architecture == "Xception":
+            net = Xception(standardized, self._step, self._ifTest, layers, numMiddle=num_middle)
+        else:
+            raise ValueError("Invalid simulator architecture argument!")
+
+        return net.output
+
+
+    def preproc(self, images):
         pass
 
     def inference(self, logits):
@@ -77,7 +123,7 @@ class Net:
         """
         pass
 
-    def train(self, training_data_generator, path_load=None, path_save=None):
+    def train(self, training_data_generator, test_data_generator, path_load=None, path_save=None):
         """
         Trains network according the the hyper params of the Net subclass.
 
@@ -2949,7 +2995,7 @@ def SimpleV7Slim(standardized, step, ifTest, layers, numMiddle=2):
     return net
 
 
-def Xcpetion(standardized, step, ifTest, layers, numMiddle=8): 
+def Xception(standardized, step, ifTest, layers, numMiddle=8):
     
     net = Layers.Conv2D(standardized, convChannels=32,
                         convKernel=[3, 3], convStride=[1, 1], conv_weight_decay=wd,

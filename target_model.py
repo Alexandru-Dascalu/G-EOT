@@ -20,18 +20,18 @@ def load_HDF5():
 
 
 Hyper_Params = {'BatchSize': 200,
-                        'LearningRate': 1e-3,
-                        'MinLearningRate': 2 * 1e-5,
-                        'DecayRate': 0.9,
-                        'DecayAfter': 300,
-                        'ValidateAfter': 300,
-                        'TestSteps': 50,
-                        'TotalSteps': 30000}
+                'LearningRate': 1e-3,
+                'MinLearningRate': 2 * 1e-5,
+                'DecayRate': 0.9,
+                'DecayAfter': 300,
+                'ValidateAfter': 300,
+                'TestSteps': 50,
+                'TotalSteps': 30000}
 
 
 class NetImageNet(Nets.Net):
 
-    def __init__(self, image_shape, hyper_params=None):
+    def __init__(self, image_shape, architecture, hyper_params=None):
         Nets.Net.__init__(self)
 
         if hyper_params is None:
@@ -39,26 +39,16 @@ class NetImageNet(Nets.Net):
 
         self._init = False
         self._hyper_params = hyper_params
-        self._graph = tf.Graph()
-        self._sess = tf.compat.v1.Session(graph=self._graph)
 
         with self._graph.as_default():
-            # variable to keep check if network is being tested or trained
-            self._ifTest = tf.Variable(False, name='ifTest', trainable=False, dtype=tf.bool)
-            # define operations to set ifTest variable
-            self._phaseTrain = tf.compat.v1.assign(self._ifTest, False)
-            self._phaseTest = tf.compat.v1.assign(self._ifTest, True)
-
-            self._step = tf.Variable(0, name='step', trainable=False, dtype=tf.int32)
-
             # Inputs
             self._images = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None] + image_shape,
-                                          name='CIFAR10_images')
+                                                    name='CIFAR10_images')
             self._labels = tf.compat.v1.placeholder(dtype=tf.int64, shape=[None],
-                                          name='CIFAR10_labels_class')
+                                                    name='CIFAR10_labels_class')
 
             # define network body
-            self._body = self.body(self._images)
+            self._body = self.body(self._images, architecture)
             self._inference = self.inference(self._body)
             # defines accuracy metric. checks if inference output is equal to labels, and computes an average of the
             # number of times the output is correct
@@ -85,14 +75,17 @@ class NetImageNet(Nets.Net):
             # Saver
             self._saver = tf.compat.v1.train.Saver(max_to_keep=5)
 
-    def body(self, images):
-        # Preprocessings
-        standardized = Preproc.normalise_images(images)
-        # Body
-        net = Nets.SmallNet(standardized, self._step, self._ifTest, self._layers)
+    def preproc(self, images):
+        # normalise images
+        casted = tf.cast(images, tf.float32)
+        standardized = tf.identity(casted / 127.5 - 1.0, name='training_standardized')
 
+        return standardized
+
+    def body(self, images, architecture, num_middle=2, for_generator=False):
+        net_output = super().body(images, architecture, num_middle=num_middle)
         # add label for classification with 10 labels. Outputs raw logits.
-        class10 = Layers.FullyConnected(net.output, outputSize=10, weightInit=Layers.XavierInit, wd=1e-4,
+        class10 = Layers.FullyConnected(net_output, outputSize=10, weightInit=Layers.XavierInit, wd=1e-4,
                                         biasInit=Layers.ConstInit(0.0),
                                         activation=Layers.Linear,
                                         name='FC_Coarse', dtype=tf.float32)
@@ -112,14 +105,14 @@ class NetImageNet(Nets.Net):
         with self._graph.as_default():
             # define decaying learning rate
             self._lr = tf.compat.v1.train.exponential_decay(self._hyper_params['LearningRate'],
-                                                  global_step=self._step,
-                                                  decay_steps=self._hyper_params['DecayAfter'],
-                                                  decay_rate=self._hyper_params['DecayRate'])
+                                                            global_step=self._step,
+                                                            decay_steps=self._hyper_params['DecayAfter'],
+                                                            decay_rate=self._hyper_params['DecayRate'])
             self._lr += self._hyper_params['MinLearningRate']
 
             # define optimiser
             self._optimizer = tf.compat.v1.train.AdamOptimizer(self._lr, epsilon=1e-8).minimize(self._loss,
-                                                                                      global_step=self._step)
+                                                                                                global_step=self._step)
             # Initialize all
             self._sess.run(tf.compat.v1.global_variables_initializer())
             # check if it should re-start training from a known checkpoint
@@ -178,6 +171,6 @@ class NetImageNet(Nets.Net):
 
 
 if __name__ == '__main__':
-    net = NetImageNet([32, 32, 3])
+    net = NetImageNet([32, 32, 3], "SmallNet")
     batchTrain, batchTest = get_data_generators(batch_size=Hyper_Params['BatchSize'], image_size=[32, 32, 3])
     net.train(batchTrain, batchTest, path_save='./ClassifyCIFAR10/netcifar10.ckpt')

@@ -104,7 +104,7 @@ def generate_data_label_pair(models):
         yield image, labels
 
 
-def get_data_generators(batch_size):
+def get_data_generator(batch_size):
     """ Creates a generator that generate batches of textures from the 3D model dataset.
     Parameters
     ----------
