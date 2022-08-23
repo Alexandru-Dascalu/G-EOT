@@ -12,7 +12,7 @@ class Net:
         self._variables = []
         self._body = None
         self._inference = None
-        self._loss = None
+        self._layer_losses = None
         self._saver = None
 
         self._graph = tf.Graph()

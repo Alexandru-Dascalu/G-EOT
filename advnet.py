@@ -330,7 +330,6 @@ def create_simulatorG_SimpleNet(images, step, ifTest):
 
     return logits.output
 
-
 hyper_params_imagenet = {'BatchSize': 8,
                          'NumSubnets': 10,
                          'NumPredictor': 1,
@@ -347,19 +346,16 @@ hyper_params_imagenet = {'BatchSize': 8,
 
 class AdvNet(nets.Net):
 
-    def __init__(self, image_shape, enemy, architecture, num_middle=2, hyper_params=None):
+    def __init__(self, image_shape, enemy, architecture, hyper_params=None):
         nets.Net.__init__(self)
 
         if hyper_params is None:
             hyper_params = hyper_params_imagenet
-
-        self._init = False
         self._hyper_params = hyper_params
 
         # the targeted neural network model
         self._enemy = enemy
         with self._graph.as_default():
-
             # Inputs
             self._textures = tf.compat.v1.placeholder(dtype=tf.float32,
                                                       shape=[self._hyper_params['BatchSize']] + image_shape,
@@ -375,34 +371,39 @@ class AdvNet(nets.Net):
                 self._generator = create_generator(self._textures, self._adversarial_targets,
                                                    self._hyper_params['NumSubnets'], self._step,
                                                    self._ifTest, self._layers)
-            self._noises = self._generator
-            self._adversarial_textures = self._noises + self._textures
+            self._adversarial_textures = self._generator + self._textures
 
             # define simulator
-            with tf.compat.v1.variable_scope('Predictor', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._simulator = self.body(self._textures, architecture, num_middle, for_generator=False)
+            with tf.compat.v1.variable_scope('Simulator', reuse=tf.compat.v1.AUTO_REUSE) as scope:
+                self._simulator = self.body(self._textures, architecture, for_generator=False)
                 # what is the point of this??? Why is the generator training against a different simulator, which is
                 # not trained to match the target model? Why is one simulator trained on normal images, and another on
                 # adversarial images?
-                self._simulatorG = self.body(self._adversarial_textures, architecture, num_middle, for_generator=True)
+                self._simulatorG = self.body(self._adversarial_textures, architecture, for_generator=True)
 
             # define inference as hard label prediction of simulator on natural images
             self._inference = self.inference(self._simulator)
             # accuracy is how often simulator prediction matches the prediction of the target net
             self._accuracy = tf.reduce_mean(input_tensor=tf.cast(tf.equal(self._inference, self._labels), tf.float32))
 
-            self._loss = 0
+            self._layer_losses = 0
             for elem in self._layers:
                 if len(elem.losses) > 0:
                     for loss in elem.losses:
-                        self._loss += loss
+                        self._layer_losses += loss
 
             # simulator loss matches simulator output against output of target model
-            self._loss_simulator = self.loss(self._simulator, self._labels, name='lossP') + self._loss
+            self._loss_simulator = self.loss(self._simulator, self._labels, name='lossP') + self._layer_losses
             # generator trains to produce perturbations that make the simulator produce the desired target labels
             self._loss_generator = self.loss(self._simulatorG, self._adversarial_targets, name='lossG')
             self._loss_generator += self._hyper_params['NoiseDecay'] * tf.reduce_mean(
-                input_tensor=tf.norm(tensor=self._noises)) + self._loss
+                input_tensor=tf.norm(tensor=self._generator)) + self._layer_losses
+
+            self._lr = tf.compat.v1.train.exponential_decay(self._hyper_params['LearningRate'],
+                                                            global_step=self._step,
+                                                            decay_steps=self._hyper_params['DecayAfter'],
+                                                            decay_rate=self._hyper_params['DecayRate'])
+            self._lr += self._hyper_params['MinLearningRate']
 
             print(self.summary)
             # Saver
@@ -411,10 +412,9 @@ class AdvNet(nets.Net):
     def body(self, images, architecture, num_middle=2, for_generator=False):
         # define body of simulator
         net_output = super().body(images, architecture, num_middle, for_generator)
-        logits = layers.FullyConnected(net_output, outputSize=1000, weightInit=layers.XavierInit,
-                                       biasInit=layers.const_init(0.0), activation=layers.Linear,
+        logits = layers.FullyConnected(net_output, outputSize=1000, activation=layers.Linear,
                                        reuse=tf.compat.v1.AUTO_REUSE,
-                                       name='P_FC_classes', dtype=tf.float32)
+                                       name='P_FC_classes')
         if not for_generator:
             self._layers.append(logits)
 
@@ -439,13 +439,7 @@ class AdvNet(nets.Net):
     def train(self, data_generator, path_load=None, path_save=None):
         print("\n Begin Training: \n")
         with self._graph.as_default():
-            self._lr = tf.compat.v1.train.exponential_decay(self._hyper_params['LearningRate'],
-                                                            global_step=self._step,
-                                                            decay_steps=self._hyper_params['DecayAfter'],
-                                                            decay_rate=self._hyper_params['DecayRate'])
-            self._lr += self._hyper_params['MinLearningRate']
-
-            self._stepInc = tf.compat.v1.assign(self._step, self._step + 1)
+            self._step_inc = tf.compat.v1.assign(self._step, self._step + 1)
 
             self._varsG = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='Generator')
             self._varsS = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='Predictor')
@@ -500,7 +494,7 @@ class AdvNet(nets.Net):
             globalStep = 0
             # main training loop
             while globalStep < self._hyper_params['TotalSteps']:
-                self._sess.run(self._stepInc)
+                self._sess.run(self._step_inc)
 
                 # train simulator for a couple of steps
                 for _ in range(self._hyper_params['NumPredictor']):
