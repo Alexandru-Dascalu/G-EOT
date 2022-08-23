@@ -341,6 +341,7 @@ hyper_params_imagenet = {'BatchSize': 8,
                          'DecayAfter': 300,
                          'ValidateAfter': 300,
                          'TestSteps': 50,
+                         'WarmupSteps': 600,
                          'TotalSteps': 30000}
 
 
@@ -441,17 +442,11 @@ class AdvNet(nets.Net):
         with self._graph.as_default():
             self._step_inc = tf.compat.v1.assign(self._step, self._step + 1)
 
-            self._varsG = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='Generator')
             self._varsS = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='Predictor')
-
             # define optimisers
             self._optimizerS = tf.compat.v1.train.AdamOptimizer(self._lr, epsilon=1e-8).minimize(self._loss_simulator,
                                                                                                  var_list=self._varsS)
-            self._optimizerG = tf.compat.v1.train.AdamOptimizer(self._lr, epsilon=1e-8)
-            # clip generator optimiser gradients
-            gradientsG = self._optimizerG.compute_gradients(self._loss_generator, var_list=self._varsG)
-            capped_gvs = [(tf.clip_by_value(grad, -1.0, 1.0), var) for grad, var in gradientsG]
-            self._optimizerG = self._optimizerG.apply_gradients(capped_gvs)
+            self._optimizerG = self._get_generator_optimiser()
 
             # Initialize all
             self._sess.run(tf.compat.v1.global_variables_initializer())
@@ -459,34 +454,9 @@ class AdvNet(nets.Net):
             if path_load is not None:
                 self.load(path_load)
             else:
-                # warm up simulator to match predictions of target model on clean images
-                print('Warming up. ')
-                for idx in range(300):
-                    data, _, _ = next(data_generator)
-                    target_model_label = np.array(self._enemy.infer(data))
-                    loss, accuracy, _ = self._sess.run([self._loss_simulator, self._accuracy, self._optimizerS],
-                                                       feed_dict={self._textures: data,
-                                                                  self._labels: target_model_label})
-                    print('\rSimulator => Step: ', idx - 300,
-                          '; Loss: %.3f' % loss,
-                          '; Accuracy: %.3f' % accuracy,
-                          end='')
-
-                # evaluate warmed up simulator on test data
-                warmupAccu = 0.0
-                for idx in range(50):
-                    data, _, _ = next(data_generator)
-                    target_model_label = np.array(self._enemy.infer(data))
-                    loss, accuracy, _ = \
-                        self._sess.run([self._loss_simulator, self._accuracy, self._optimizerS],
-                                       feed_dict={self._textures: data,
-                                                  self._labels: target_model_label})
-                    warmupAccu += accuracy
-                warmupAccu = warmupAccu / 50
-                print('\nWarmup Accuracy: ', warmupAccu)
+                self._warm_up_simulator()
 
             self.evaluate(data_generator)
-
             self._sess.run([self._phaseTrain])
             if path_save is not None:
                 self.save(path_save)
@@ -563,7 +533,7 @@ class AdvNet(nets.Net):
                           '; UFR: %.3f' % ufr,
                           end='')
 
-                # evaluate on test every so ften
+                # evaluate on test every so often
                 if globalStep % self._hyper_params['ValidateAfter'] == 0:
                     self.evaluate(data_generator)
                     if path_save is not None:
@@ -573,6 +543,43 @@ class AdvNet(nets.Net):
                                  self.generator_accuracy_history, self.test_loss_history, self.test_accuracy_history)
 
                     self._sess.run([self._phaseTrain])
+
+    def _get_generator_optimiser(self):
+        varsG = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='Generator')
+
+        optimizerG = tf.compat.v1.train.AdamOptimizer(self._lr, epsilon=1e-8)
+        gradientsG = optimizerG.compute_gradients(self._loss_generator, var_list=varsG)
+
+        # clip generator optimiser gradients
+        clipped_gradients = [(tf.clip_by_value(grad, -1.0, 1.0), var) for grad, var in gradientsG]
+
+        return optimizerG.apply_gradients(clipped_gradients)
+
+    def _warm_up_simulator(self):
+        # warm up simulator to match predictions of target model on clean images
+        print('Warming up. ')
+        for idx in range(self._hyper_params['WarmupSteps']):
+            textures, _, _ = next(data_generator)
+            target_model_labels = np.array(self._enemy.infer(textures))
+            loss, accuracy, _ = self._sess.run([self._loss_simulator, self._accuracy, self._optimizerS],
+                                               feed_dict={self._textures: textures,
+                                                          self._labels: target_model_labels})
+            print('\rSimulator => Step: ', idx - 300,
+                  '; Loss: %.3f' % loss,
+                  '; Accuracy: %.3f' % accuracy,
+                  end='')
+
+        # evaluate warmed up simulator on test data
+        warmup_accuracy = 0.0
+        for idx in range(50):
+            textures, _, _ = next(data_generator)
+            target_model_labels = np.array(self._enemy.infer(textures))
+            loss, accuracy = self._sess.run([self._loss_simulator, self._accuracy],
+                                            feed_dict={self._textures: textures,
+                                                       self._labels: target_model_labels})
+            warmup_accuracy += accuracy
+        warmup_accuracy = warmup_accuracy / 50
+        print('\nWarmup Accuracy: ', warmup_accuracy)
 
     def evaluate(self, test_data_generator, path=None):
         if path is not None:
