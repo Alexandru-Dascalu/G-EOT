@@ -12,49 +12,64 @@ import matplotlib.pyplot as plt
 import data
 import layers
 import nets
+import encoders
 import target_model
 import preproc
 
 NoiseRange = 10.0
 
 
-def create_encoder(images, step, ifTest, layers_list):
-    return nets.get_Simple_Net(images, step, ifTest, layers_list, name_prefix="G_")
+def create_encoder(textures, step, ifTest, layers_list):
+    return encoders.get_Simple_Net_encoder(textures, step, ifTest, layers_list, name_prefix="G_")
 
 
-def create_generator(images, targets, num_experts, step, ifTest, layers_list):
-    encoder = create_encoder(images, step, ifTest, layers_list)
+def create_generator(textures, targets, num_experts, step, ifTest, layers_list):
+    textures = preproc.normalise_images(textures)
+    encoder = create_encoder(textures, step, ifTest, layers_list)
 
     net = layers.DeConv2D(encoder.output, convChannels=128,
                           convKernel=[3, 3], convStride=[2, 2],
                           batch_norm=True, step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv192')
+                          reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv128')
     layers_list.append(net)
+
     subnets = []
     for idx in range(num_experts):
         subnet = layers.DeConv2D(net.output, convChannels=64,
                                  convKernel=[3, 3], convStride=[2, 2],
                                  batch_norm=True, step=step, ifTest=ifTest,
                                  activation=layers.ReLU,
-                                 reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv96_' + str(idx))
+                                 reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv64_' + str(idx))
         layers_list.append(subnet)
         subnet = layers.DeConv2D(subnet.output, convChannels=32,
                                  convKernel=[3, 3], convStride=[2, 2],
                                  batch_norm=True, step=step, ifTest=ifTest,
                                  activation=layers.ReLU,
-                                 reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv48_' + str(idx))
+                                 reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv32_' + str(idx))
         layers_list.append(subnet)
-        subnet = layers.Conv2D(subnet.output, convChannels=3,
-                               convKernel=[3, 3], convStride=[1, 1],
-                               batch_norm=True, step=step, ifTest=ifTest,
-                               activation=layers.ReLU,
-                               reuse=tf.compat.v1.AUTO_REUSE, name='G_SepConv3_' + str(idx))
+        subnet = layers.DeConv2D(subnet.output, convChannels=16,
+                                 convKernel=[3, 3], convStride=[2, 2],
+                                 batch_norm=True, step=step, ifTest=ifTest,
+                                 activation=layers.ReLU,
+                                 reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv16_' + str(idx))
+        layers_list.append(subnet)
+        subnet = layers.DeConv2D(subnet.output, convChannels=8,
+                                 convKernel=[3, 3], convStride=[2, 2],
+                                 batch_norm=True, step=step, ifTest=ifTest,
+                                 activation=layers.ReLU,
+                                 reuse=tf.compat.v1.AUTO_REUSE, name='G_DeConv8_' + str(idx))
+        layers_list.append(subnet)
+        subnet = layers.DeConv2D(subnet.output, convChannels=3,
+                                 convKernel=[3, 3], convStride=[2, 2],
+                                 batch_norm=True, step=step, ifTest=ifTest,
+                                 activation=layers.ReLU,
+                                 reuse=tf.compat.v1.AUTO_REUSE, name='G_SepConv3_' + str(idx))
         layers_list.append(subnet)
         subnets.append(tf.expand_dims(subnet.output, axis=-1))
 
     subnets = tf.concat(subnets, axis=-1)
-    weights = layers.FullyConnected(tf.one_hot(targets, 10), outputSize=num_experts,
+    weights = layers.FullyConnected(tf.one_hot(targets, 1000), outputSize=num_experts,
                                     l2_constant=0.0, activation=layers.Softmax,
                                     reuse=tf.compat.v1.AUTO_REUSE, name='G_WeightsMoE')
     layers_list.append(weights)
