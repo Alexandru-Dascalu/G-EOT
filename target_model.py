@@ -86,7 +86,7 @@ class NetImageNet(Nets.Net):
         net_output = super().body(images, architecture, num_middle=num_middle)
         # add label for classification with 10 labels. Outputs raw logits.
         class10 = Layers.FullyConnected(net_output, outputSize=10, weightInit=Layers.XavierInit, l2_constant=1e-4,
-                                        biasInit=Layers.ConstInit(0.0),
+                                        biasInit=Layers.const_init(0.0),
                                         activation=Layers.Linear,
                                         name='FC_Coarse', dtype=tf.float32)
         self._layers.append(class10)

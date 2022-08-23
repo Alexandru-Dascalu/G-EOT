@@ -3,18 +3,18 @@ import tensorflow as tf
 
 from tensorflow.python.training.moving_averages import assign_moving_average
 
-weight_l2_loss = 4e-5
+weight_l2_loss = 1e-4
 
 # Initializers
 XavierInit = tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform")
 Norm01Init = tf.compat.v1.truncated_normal_initializer(0.0, stddev=0.1)
 
 
-def NormalInit(stddev, dtype=tf.float32):
+def normal_init(stddev, dtype=tf.float32):
     return tf.compat.v1.truncated_normal_initializer(0.0, stddev=stddev, dtype=dtype)
 
 
-def ConstInit(const, dtype=tf.float32):
+def const_init(const, dtype=tf.float32):
     return tf.compat.v1.constant_initializer(const, dtype=dtype)
 
 
@@ -76,7 +76,7 @@ class Conv2D(Layer):
 
     def __init__(self, feature, convChannels,
                  convKernel=[3, 3], convStride=[1, 1], l2_constant=weight_l2_loss, convInit=XavierInit,
-                 convPadding='SAME', bias=True, biasInit=ConstInit(0.0),
+                 convPadding='SAME', bias=True, biasInit=const_init(0.0),
                  batch_norm=False, step=None, ifTest=None, epsilon=1e-5,
                  activation=Linear, pool=False, poolSize=[3, 3], poolStride=[2, 2], poolType=MaxPool,
                  poolPadding='SAME', reuse=False, name=None, dtype=tf.float32):
@@ -112,13 +112,13 @@ class Conv2D(Layer):
                 assert (ifTest is not None), "ifTest parameter must not be None. "
                 shapeParams = [conv.shape[-1]]
                 self._offset = tf.compat.v1.get_variable(scope.name + '_offset',
-                                                         shapeParams, initializer=ConstInit(0.0), dtype=dtype)
+                                                         shapeParams, initializer=const_init(0.0), dtype=dtype)
                 self._scale = tf.compat.v1.get_variable(scope.name + '_scale',
-                                                        shapeParams, initializer=ConstInit(1.0), dtype=dtype)
+                                                        shapeParams, initializer=const_init(1.0), dtype=dtype)
                 self._movMean = tf.compat.v1.get_variable(scope.name + '_movMean', shapeParams, trainable=False,
-                                                          initializer=ConstInit(0.0), dtype=dtype, use_resource=True)
+                                                          initializer=const_init(0.0), dtype=dtype, use_resource=True)
                 self._movVar = tf.compat.v1.get_variable(scope.name + '_movVar', shapeParams, trainable=False,
-                                                         initializer=ConstInit(1.0), dtype=dtype, use_resource=True)
+                                                         initializer=const_init(1.0), dtype=dtype, use_resource=True)
                 self._variables.append(self._scale)
                 self._variables.append(self._offset)
                 self._epsilon = epsilon
@@ -177,7 +177,7 @@ class Conv2D(Layer):
 class DeConv2D(Layer):
     def __init__(self, feature, convChannels, shapeOutput=None,
                  convKernel=[3, 3], convStride=[1, 1], l2_constant=weight_l2_loss, convInit=XavierInit, convPadding='SAME',
-                 bias=True, biasInit=ConstInit(0.0), batch_norm=False, step=None, ifTest=None, epsilon=1e-5,
+                 bias=True, biasInit=const_init(0.0), batch_norm=False, step=None, ifTest=None, epsilon=1e-5,
                  activation=Linear, pool=False, poolSize=[3, 3], poolStride=[2, 2], poolType=MaxPool,
                  poolPadding='SAME', reuse=False, name=None, dtype=tf.float32):
         assert isinstance(feature, tf.Tensor), 'feature must be a tf.Tensor, use Layer.output to get it'
@@ -218,13 +218,13 @@ class DeConv2D(Layer):
                 assert (ifTest is not None), "ifTest parameter must not be None. "
                 shapeParams = [conv.shape[-1]]
                 self._offset = tf.compat.v1.get_variable(scope.name + '_offset',
-                                                         shapeParams, initializer=ConstInit(0.0), dtype=dtype)
+                                                         shapeParams, initializer=const_init(0.0), dtype=dtype)
                 self._scale = tf.compat.v1.get_variable(scope.name + '_scale',
-                                                        shapeParams, initializer=ConstInit(1.0), dtype=dtype)
+                                                        shapeParams, initializer=const_init(1.0), dtype=dtype)
                 self._movMean = tf.compat.v1.get_variable(scope.name + '_movMean', shapeParams, trainable=False,
-                                                          initializer=ConstInit(0.0), dtype=dtype, use_resource=True)
+                                                          initializer=const_init(0.0), dtype=dtype, use_resource=True)
                 self._movVar = tf.compat.v1.get_variable(scope.name + '_movVar', shapeParams, trainable=False,
-                                                         initializer=ConstInit(1.0), dtype=dtype, use_resource=True)
+                                                         initializer=const_init(1.0), dtype=dtype, use_resource=True)
                 self._variables.append(self._scale)
                 self._variables.append(self._offset)
                 self._epsilon = epsilon
@@ -284,7 +284,7 @@ class SepConv2D(Layer):
 
     def __init__(self, feature, convChannels,
                  convKernel=[3, 3], convStride=[1, 1], l2_constant=weight_l2_loss, convInit=XavierInit, convPadding='SAME',
-                 bias=True, biasInit=ConstInit(0.0), batch_norm=False, step=None, ifTest=None, epsilon=1e-5,
+                 bias=True, biasInit=const_init(0.0), batch_norm=False, step=None, ifTest=None, epsilon=1e-5,
                  activation=Linear, pool=False, poolSize=[3, 3], poolStride=[2, 2], poolType=MaxPool,
                  poolPadding='SAME', reuse=False, name=None, dtype=tf.float32):
         assert isinstance(feature, tf.Tensor), 'feature must be a tf.Tensor, use Layer.output to get it'
@@ -326,13 +326,13 @@ class SepConv2D(Layer):
                 assert (ifTest is not None), "ifTest parameter must not be None. "
                 shapeParams = [conv.shape[-1]]
                 self._offset = tf.compat.v1.get_variable(scope.name + '_offset',
-                                                         shapeParams, initializer=ConstInit(0.0), dtype=dtype)
+                                                         shapeParams, initializer=const_init(0.0), dtype=dtype)
                 self._scale = tf.compat.v1.get_variable(scope.name + '_scale',
-                                                        shapeParams, initializer=ConstInit(1.0), dtype=dtype)
+                                                        shapeParams, initializer=const_init(1.0), dtype=dtype)
                 self._movMean = tf.compat.v1.get_variable(scope.name + '_movMean', shapeParams, trainable=False,
-                                                          initializer=ConstInit(0.0), dtype=dtype, use_resource=True)
+                                                          initializer=const_init(0.0), dtype=dtype, use_resource=True)
                 self._movVar = tf.compat.v1.get_variable(scope.name + '_movVar', shapeParams, trainable=False,
-                                                         initializer=ConstInit(1.0), dtype=dtype, use_resource=True)
+                                                         initializer=const_init(1.0), dtype=dtype, use_resource=True)
                 self._variables.append(self._scale)
                 self._variables.append(self._offset)
                 self._epsilon = epsilon
@@ -392,7 +392,7 @@ class DepthwiseConv2D(Layer):
 
     def __init__(self, feature, convChannels,
                  convKernel=[3, 3], convStride=[1, 1], l2_constant=weight_l2_loss, convInit=XavierInit, convPadding='SAME',
-                 bias=True, biasInit=ConstInit(0.0), batch_norm=False, step=None, ifTest=None, epsilon=1e-5,
+                 bias=True, biasInit=const_init(0.0), batch_norm=False, step=None, ifTest=None, epsilon=1e-5,
                  activation=Linear, pool=False, poolSize=[3, 3], poolStride=[2, 2], poolType=MaxPool,
                  poolPadding='SAME', reuse=False, name=None, dtype=tf.float32):
         assert isinstance(feature, tf.Tensor), 'feature must be a tf.Tensor, use Layer.output to get it'
@@ -428,13 +428,13 @@ class DepthwiseConv2D(Layer):
                 assert (ifTest is not None), "ifTest parameter must not be None. "
                 shapeParams = [conv.shape[-1]]
                 self._offset = tf.compat.v1.get_variable(scope.name + '_offset',
-                                                         shapeParams, initializer=ConstInit(0.0), dtype=dtype)
+                                                         shapeParams, initializer=const_init(0.0), dtype=dtype)
                 self._scale = tf.compat.v1.get_variable(scope.name + '_scale',
-                                                        shapeParams, initializer=ConstInit(1.0), dtype=dtype)
+                                                        shapeParams, initializer=const_init(1.0), dtype=dtype)
                 self._movMean = tf.compat.v1.get_variable(scope.name + '_movMean', shapeParams, trainable=False,
-                                                          initializer=ConstInit(0.0), dtype=dtype, use_resource=True)
+                                                          initializer=const_init(0.0), dtype=dtype, use_resource=True)
                 self._movVar = tf.compat.v1.get_variable(scope.name + '_movVar', shapeParams, trainable=False,
-                                                         initializer=ConstInit(1.0), dtype=dtype, use_resource=True)
+                                                         initializer=const_init(1.0), dtype=dtype, use_resource=True)
                 self._variables.append(self._scale)
                 self._variables.append(self._offset)
                 self._epsilon = epsilon
@@ -528,13 +528,13 @@ class BatchNorm(Layer):
         with tf.compat.v1.variable_scope(self._name, reuse=reuse) as scope:
             shapeParams = [feature.shape[-1]]
             self._offset = tf.compat.v1.get_variable(scope.name + '_offset',
-                                                     shapeParams, initializer=ConstInit(0.0), dtype=dtype)
+                                                     shapeParams, initializer=const_init(0.0), dtype=dtype)
             self._scale = tf.compat.v1.get_variable(scope.name + '_scale',
-                                                    shapeParams, initializer=ConstInit(1.0), dtype=dtype)
+                                                    shapeParams, initializer=const_init(1.0), dtype=dtype)
             self._movMean = tf.compat.v1.get_variable(scope.name + '_movMean', shapeParams, trainable=False,
-                                                      initializer=ConstInit(0.0), dtype=dtype, use_resource=True)
+                                                      initializer=const_init(0.0), dtype=dtype, use_resource=True)
             self._movVar = tf.compat.v1.get_variable(scope.name + '_movVar', shapeParams, trainable=False,
-                                                     initializer=ConstInit(1.0), dtype=dtype, use_resource=True)
+                                                     initializer=const_init(1.0), dtype=dtype, use_resource=True)
             self._variables.append(self._scale)
             self._variables.append(self._offset)
             self._epsilon = epsilon
@@ -616,7 +616,7 @@ class Flatten(Layer):
 class FullyConnected(Layer):
 
     def __init__(self, feature, outputSize, weightInit=XavierInit, l2_constant=weight_l2_loss,
-                 bias=True, biasInit=ConstInit(0.0),
+                 bias=True, biasInit=const_init(0.0),
                  activation=ReLU,
                  reuse=False, name=None, dtype=tf.float32):
         assert isinstance(feature, tf.Tensor), 'feature must be a tf.Tensor, use Layer.output to get it'
