@@ -310,14 +310,14 @@ def SmallNet(standardized, step, ifTest, layers):
     return net
 
 
-def get_Simple_Net(standardized, step, ifTest, layers):
+def get_Simple_Net(standardized, step, ifTest, layers, name_prefix=""):
     net = Layers.DepthwiseConv2D(standardized, convChannels=48,
                                  convKernel=[3, 3], convStride=[1, 1],
                                  convInit=Layers.XavierInit, convPadding='SAME',
                                  biasInit=Layers.const_init(0.0),
                                  batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                                  activation=Layers.ReLU,
-                                 name='DepthwiseConv3x16', dtype=tf.float32)
+                                 name='{}DepthwiseConv3x16'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     net = Layers.SepConv2D(net.output, convChannels=96,
                            convKernel=[3, 3], convStride=[1, 1],
@@ -325,7 +325,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            activation=Layers.ReLU,
-                           name='SepConv96', dtype=tf.float32)
+                           name='{}SepConv96'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     
     toadd = Layers.Conv2D(net.output, convChannels=192,
@@ -336,7 +336,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                           activation=Layers.ReLU,
                           pool=True, poolSize=[3, 3], poolStride=[2, 2],
                           poolType=Layers.MaxPool, poolPadding='SAME',
-                          name='SepConv192Shortcut', dtype=tf.float32)
+                          name='{}SepConv192Shortcut'.format(name_prefix), dtype=tf.float32)
     layers.append(toadd)
     
     net = Layers.SepConv2D(net.output, convChannels=192,
@@ -345,7 +345,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            activation=Layers.ReLU,
-                           name='SepConv192a', dtype=tf.float32)
+                           name='{}SepConv192a'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     # why does this not have activation?
     net = Layers.SepConv2D(net.output, convChannels=192,
@@ -353,7 +353,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            convInit=Layers.XavierInit, convPadding='SAME',
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
-                           name='SepConv192b', dtype=tf.float32)
+                           name='{}SepConv192b'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     
     added = toadd.output + net.output
@@ -366,11 +366,11 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                           activation=Layers.ReLU,
                           pool=True, poolSize=[3, 3], poolStride=[2, 2],
                           poolType=Layers.MaxPool, poolPadding='SAME',
-                          name='SepConv384Shortcut', dtype=tf.float32)
+                          name='{}SepConv384Shortcut'.format(name_prefix), dtype=tf.float32)
     layers.append(toadd)
 
     # why activate this again?
-    net = Layers.Activation(added, activation=Layers.ReLU, name='ReLU384')
+    net = Layers.Activation(added, activation=Layers.ReLU, name='{}ReLU384'.format(name_prefix))
     layers.append(net)
     net = Layers.SepConv2D(net.output, convChannels=384,
                            convKernel=[3, 3], convStride=[2, 2],
@@ -378,7 +378,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            activation=Layers.ReLU,
-                           name='SepConv384a', dtype=tf.float32)
+                           name='{}SepConv384a'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     net = Layers.SepConv2D(net.output, convChannels=384,
                            convKernel=[3, 3], convStride=[1, 1],
@@ -386,7 +386,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            activation=Layers.ReLU,
-                           name='SepConv384b', dtype=tf.float32)
+                           name='{}SepConv384b'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     
     added = toadd.output + net.output
@@ -399,11 +399,11 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                           activation=Layers.ReLU,
                           pool=True, poolSize=[3, 3], poolStride=[2, 2],
                           poolType=Layers.MaxPool, poolPadding='SAME',
-                          name='SepConv768Shortcut', dtype=tf.float32)
+                          name='{}SepConv768Shortcut'.format(name_prefix), dtype=tf.float32)
     layers.append(toadd)
 
     # why activate this again?
-    net = Layers.Activation(added, activation=Layers.ReLU, name='ReLU768')
+    net = Layers.Activation(added, activation=Layers.ReLU, name='{}ReLU768'.format(name_prefix))
     layers.append(net)
     net = Layers.SepConv2D(net.output, convChannels=768,
                            convKernel=[3, 3], convStride=[2, 2],
@@ -411,7 +411,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            activation=Layers.ReLU,
-                           name='SepConv768a', dtype=tf.float32)
+                           name='SepConv768a'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     net = Layers.SepConv2D(net.output, convChannels=768,
                            convKernel=[3, 3], convStride=[1, 1],
@@ -419,13 +419,13 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            activation=Layers.ReLU,
-                           name='SepConv768b', dtype=tf.float32)
+                           name='SepConv768b'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     
     added = toadd.output + net.output
 
     # why activate this? both toadd and net had RELU activation
-    net = Layers.Activation(added, activation=Layers.ReLU, name='ReLU11024')
+    net = Layers.Activation(added, activation=Layers.ReLU, name='{}ReLU11024'.format(name_prefix))
     layers.append(net)
     net = Layers.SepConv2D(net.output, convChannels=1024,
                            convKernel=[3, 3], convStride=[1, 1],
@@ -433,7 +433,7 @@ def get_Simple_Net(standardized, step, ifTest, layers):
                            biasInit=Layers.const_init(0.0),
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            activation=Layers.ReLU,
-                           name='SepConv1024', dtype=tf.float32)
+                           name='{}SepConv1024'.format(name_prefix), dtype=tf.float32)
     layers.append(net)
     return net
 
