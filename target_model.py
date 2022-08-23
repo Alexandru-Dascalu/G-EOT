@@ -29,10 +29,10 @@ Hyper_Params = {'BatchSize': 200,
                 'TotalSteps': 30000}
 
 
-class NetImageNet(Nets.Net):
+class NetImageNet(nets.Net):
 
     def __init__(self, image_shape, architecture, hyper_params=None):
-        Nets.Net.__init__(self)
+        nets.Net.__init__(self)
 
         if hyper_params is None:
             hyper_params = Hyper_Params
@@ -85,9 +85,9 @@ class NetImageNet(Nets.Net):
     def body(self, images, architecture, num_middle=2, for_generator=False):
         net_output = super().body(images, architecture, num_middle=num_middle)
         # add label for classification with 10 labels. Outputs raw logits.
-        class10 = Layers.FullyConnected(net_output, outputSize=10, weightInit=Layers.XavierInit, l2_constant=1e-4,
-                                        biasInit=Layers.const_init(0.0),
-                                        activation=Layers.Linear,
+        class10 = layers.FullyConnected(net_output, outputSize=10, weightInit=layers.XavierInit, l2_constant=1e-4,
+                                        biasInit=layers.const_init(0.0),
+                                        activation=layers.Linear,
                                         name='FC_Coarse', dtype=tf.float32)
         self._layers.append(class10)
 
@@ -97,7 +97,7 @@ class NetImageNet(Nets.Net):
         return tf.argmax(input=logits, axis=-1, name='inference')
 
     def loss(self, logits, labels, name='cross_entropy'):
-        net = Layers.CrossEntropy(logits, labels, name=name)
+        net = layers.CrossEntropy(logits, labels, name=name)
         self._layers.append(net)
         return net.output
 

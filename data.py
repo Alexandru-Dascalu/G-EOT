@@ -94,7 +94,7 @@ def load_dataset(data_dir):
 
 def generate_data_label_pair(models):
     dataset_size = len(models)
-    index_generator = Preproc.generate_index(dataset_size, shuffle=True)
+    index_generator = preproc.generate_index(dataset_size, shuffle=True)
 
     while True:
         index = next(index_generator)
