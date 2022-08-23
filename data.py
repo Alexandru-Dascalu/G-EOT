@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 from objloader import Obj
 
-import Preproc
+import preproc
 
 DATA_DIR = "D:\\Informatica\\GAN-EOT\\GAN-EOT\\dataset"
 

@@ -9,11 +9,11 @@ import tensorflow as tf
 
 import matplotlib.pyplot as plt
 
-import Data
-import Layers
-import Nets
+import data
+import layers
+import nets
 import target_model
-import Preproc
+import preproc
 
 NoiseRange = 10.0
 

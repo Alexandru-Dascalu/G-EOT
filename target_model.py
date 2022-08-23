@@ -4,9 +4,9 @@ import numpy as np
 
 import tensorflow as tf
 
-import Preproc
-import Layers
-import Nets
+import preproc
+import layers
+import nets
 
 
 def load_HDF5():
