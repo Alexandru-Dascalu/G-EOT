@@ -172,13 +172,18 @@ def get_adversarial_data_generators(batch_size):
 
 
 def get_random_target_label(ground_truth_labels):
+    label_set = set(ground_truth_labels)
+
+    # loop until we have a random target label distinct from the true labels
     while True:
         target_label = random.randint(0, 999)
 
+        # dog model has al 120+ dog breeds as true labels, so we need to check if the label is outside that range
         if ground_truth_labels == "dog":
             if target_label < 151 or target_label > 275:
                 return target_label
-        elif target_label not in ground_truth_labels:
+        # just check that the chosen target is not in the set of true labels
+        elif target_label not in label_set:
             return target_label
 
 
