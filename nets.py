@@ -63,20 +63,23 @@ class Net:
         # double the regularisation losses for each layer. Therefore, we pass in an empty list, so that layers are not
         # added a second time to self._layers. If subclass is a target model, this argument should always be False
         if for_generator:
-            layers = []
+            layers_list = []
         else:
-            layers = self._layers
+            layers_list = self._layers
 
         if architecture == "SimpleNet":
-            net = get_Simple_Net(standardized, self._step, self._ifTest, layers)
+            net = get_Simple_Net(standardized, self._step, self._ifTest, layers_list)
         elif architecture == "SmallNet":
-            net = SmallNet(standardized, self._step, self._ifTest, layers)
+            net = SmallNet(standardized, self._step, self._ifTest, layers_list)
         elif architecture == "ConcatNet":
-            net = ConcatNet(standardized, self._step, self._ifTest, layers)
+            net = ConcatNet(standardized, self._step, self._ifTest, layers_list)
         elif architecture == "Xception":
-            net = Xception(standardized, self._step, self._ifTest, layers, numMiddle=num_middle)
+            net = Xception(standardized, self._step, self._ifTest, layers_list, numMiddle=num_middle)
         else:
             raise ValueError("Invalid simulator architecture argument!")
+
+        net = layers.GlobalAvgPool(net.output, name='GlobalAvgPool')
+        layers_list.append(net)
 
         return net.output
 
@@ -297,14 +300,6 @@ def SmallNet(standardized, step, ifTest, layer_list):
                         batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                         activation=layers.ReLU,
                         name='Conv10', dtype=tf.float32)
-    layer_list.append(net)
-    flattened = tf.reshape(net.output, [-1, net.output.shape[1]*net.output.shape[2]*net.output.shape[3]])
-    net = layers.FullyConnected(flattened, outputSize=1024, weightInit=layers.XavierInit,
-                                biasInit=layers.const_init(0.0),
-                                activation=layers.ReLU,
-                                name='FC1', dtype=tf.float32)
-    layer_list.append(net)
-    net = layers.BatchNorm(net.output, step, ifTest, epsilon=1e-5, name='BatchNormFC1', dtype=tf.float32)
     layer_list.append(net)
     
     return net

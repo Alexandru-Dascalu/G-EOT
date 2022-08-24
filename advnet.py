@@ -1,5 +1,4 @@
-import random
-import numpy as np
+
 import tensorflow as tf
 # gpu = tf.config.list_physical_devices('GPU')[0]
 # tf.config.experimental.set_memory_growth(gpu, True)
@@ -7,7 +6,10 @@ import tensorflow as tf
 #     gpu,
 #     [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
 
+import tensorflow_addons as tfa
 import matplotlib.pyplot as plt
+import random
+import numpy as np
 
 import data
 import layers
@@ -15,6 +17,8 @@ import nets
 import encoders
 import target_model
 import preproc
+from uv_renderer import UVRenderer
+from config import cfg
 
 NoiseRange = 10.0
 
@@ -330,6 +334,7 @@ def create_simulatorG_SimpleNet(images, step, ifTest):
 
     return logits.output
 
+
 hyper_params_imagenet = {'BatchSize': 8,
                          'NumSubnets': 10,
                          'NumPredictor': 1,
@@ -347,20 +352,24 @@ hyper_params_imagenet = {'BatchSize': 8,
 
 class AdvNet(nets.Net):
 
-    def __init__(self, image_shape, enemy, architecture, hyper_params=None):
+    def __init__(self, texture_shape, image_shape, enemy, architecture, hyper_params=None):
         nets.Net.__init__(self)
 
         if hyper_params is None:
             hyper_params = hyper_params_imagenet
         self._hyper_params = hyper_params
+        self.renderer = AdvNet.make_uv_renderer()
 
         # the targeted neural network model
         self._enemy = enemy
         with self._graph.as_default():
             # Inputs
-            self._textures = tf.compat.v1.placeholder(dtype=tf.float32,
-                                                      shape=[self._hyper_params['BatchSize']] + image_shape,
-                                                      name='textures')
+            self._std_textures = tf.compat.v1.placeholder(dtype=tf.float32,
+                                                          shape=[self._hyper_params['BatchSize']] + texture_shape,
+                                                          name='textures')
+            self.uv_mapping = tf.compat.v1.placeholder(dtype=tf.float32,
+                                                       shape=[self._hyper_params['BatchSize']] + image_shape + [2],
+                                                       name='uv_mappings')
             self._labels = tf.compat.v1.placeholder(dtype=tf.int64, shape=[self._hyper_params['BatchSize']],
                                                     name='imagenet_labels')
             self._adversarial_targets = tf.compat.v1.placeholder(dtype=tf.int64,
@@ -369,18 +378,26 @@ class AdvNet(nets.Net):
 
             # define generator
             with tf.compat.v1.variable_scope('Generator', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._generator = create_generator(self._textures, self._adversarial_targets,
+                self._generator = create_generator(self._std_textures, self._adversarial_targets,
                                                    self._hyper_params['NumSubnets'], self._step,
                                                    self._ifTest, self._layers)
-            self._adversarial_textures = self._generator + self._textures
+            self._adversarial_textures = self._generator + self._std_textures
+
+            self._print_multiplier, self._print_addend = AdvNet.get_print_error_args()
+            self._photo_multiplier, self._photo_addend, self._photo_noise = AdvNet.get_photo_error_args(
+                [self._hyper_params['BatchSize']] + image_shape + [3])
+            self._colour = AdvNet.get_background_colour()
+
+            self._std_images = self.get_rendering_pipeline(self._std_textures)
+            self._adv_images = self.get_rendering_pipeline(self._adversarial_textures)
 
             # define simulator
             with tf.compat.v1.variable_scope('Simulator', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._simulator = self.body(self._textures, architecture, for_generator=False)
+                self._simulator = self.body(self._std_images, architecture, for_generator=False)
                 # what is the point of this??? Why is the generator training against a different simulator, which is
                 # not trained to match the target model? Why is one simulator trained on normal images, and another on
                 # adversarial images?
-                self._simulatorG = self.body(self._adversarial_textures, architecture, for_generator=True)
+                self._simulatorG = self.body(self._adv_images, architecture, for_generator=True)
 
             # define inference as hard label prediction of simulator on natural images
             self._inference = self.inference(self._simulator)
@@ -420,6 +437,165 @@ class AdvNet(nets.Net):
             self._layers.append(logits)
 
         return logits.output
+
+    @staticmethod
+    def make_uv_renderer():
+        renderer = UVRenderer(None, (299, 299))
+        renderer.set_parameters(
+            camera_distance=(cfg.camera_distance_min, cfg.camera_distance_max),
+            x_translation=(cfg.x_translation_min, cfg.x_translation_max),
+            y_translation=(cfg.y_translation_min, cfg.y_translation_max)
+        )
+
+        return renderer
+
+    def get_rendering_pipeline(self, texture):
+        """Use UV mapping to create batch_seize images with both the normal and adversarial texture, then pass the
+        adversarial images as input to the victim model to get logits. UV mapping is the matrix M used to transform
+        texture x into the image with rendered object, as explained in the paper.
+
+        Returns
+        -------
+        Tensor of shape batch_size x 1000, representing the logits obtained by passing the adversarial images as
+        input to the victim model.
+        """
+        # create each image in batch from texture one at a time. We do this instead of all at once so that we need less
+        # memory (a 12 x 2048 x 2048 x 3 tensor is 600 MB, and we would create multiple ones). We make the first image
+        # outside of the loop to initialise the list of new images, and to avoid putting an if statement in the loop
+        new_images = self.create_image(texture, self.uv_mapping[0])
+        for i in range(cfg.batch_size - 1):
+            image = self.create_image(texture, self.uv_mapping[i])
+            new_images = tf.concat([new_images, image], axis=0)
+
+        # add background colour to rendered images.
+        new_images = self.add_background(new_images)
+
+        # check if we apply random noise to simulate camera noise
+        if cfg.photo_error:
+            new_images = AdvNet.apply_photo_error(new_images, self._photo_multiplier, self._photo_addend, self._photo_noise)
+
+        new_images = tf.clip_by_value(new_images, 0, 1)
+        return new_images
+
+    def create_image(self, texture, uv_mapping):
+        """Create standard and adversarial images from the respective textures using the given UV mapping.
+
+        Parameters
+        ----------
+        uv_mapping : numpy array
+            A numpy array with shape [image_height, image_width, 2]. Represents the UV mappings for an
+            image in the batch. This mappign is used to create the images from the textures.
+
+        Returns
+        -------
+        tuple
+            Two tensors. The first one is of shape num_new_renders x 299 x 299 x 3, representing the images of the new
+            renders with the normal texture. The second is of shape num_new_renders x 299 x 299 x 3, representing the images
+            of the new renders with the adversarial texture.
+        """
+        # check if we should add print errors, so that the adversarial texture may be used for a 3D printed object
+        # and still be effective
+        if cfg.print_error:
+            new_texture = AdvNet.transform(texture, self._print_multiplier, self._print_addend)
+        else:
+            # tfa.resampler requires input to be in shape batch_size x height x width x channels, so we insert a new
+            # dimension
+            new_texture = tf.expand_dims(texture, axis=0)
+
+        # tfa.image.resampler requires the first dimension of UV map to be
+        # batch size, so we add an extra dimension with one element
+        image_uv_map = tf.expand_dims(uv_mapping, axis=0)
+
+        # use UV mapping to create an images corresponding to an individual render by sampling from the texture
+        # Resulting tensors are of shape 1 x image_width x image_height x 3
+        new_image = tfa.image.resampler(new_texture, image_uv_map)
+
+        return new_image
+
+    def add_background(self, images):
+        """Colours the background pixels of the image with a random colour.
+        """
+        # compute a mask with True values for each pixel which represents the object, and False for background pixels.
+        mask = tf.reduce_all(input_tensor=tf.not_equal(self.uv_mapping, 0.0), axis=3, keepdims=True)
+
+        return AdvNet.set_background(images, mask, self._colour)
+
+    @staticmethod
+    def get_background_colour():
+        return tf.random.uniform([cfg.batch_size, 1, 1, 3], cfg.background_min, cfg.background_max)
+
+    @staticmethod
+    def set_background(x, mask, colours):
+        """Sets background color of an image according to a boolean mask.
+
+        Parameters
+        ----------
+            x: A 4-D tensor with shape [batch_size, height, size, 3]
+                The images to which a background will be added.
+            mask: boolean mask with shape [batch_size, height, width, 1]
+                The mask used for determining where are the background pixels. Has False for background pixels,
+                True otherwise.
+            colours: tensor with shape [batch_size, 1, 1, 3].
+                The background colours for each image
+        """
+        mask = tf.tile(mask, [1, 1, 1, 3])
+        inverse_mask = tf.logical_not(mask)
+
+        return tf.cast(mask, tf.float32) * x + tf.cast(inverse_mask, tf.float32) * colours
+
+    @staticmethod
+    def get_print_error_args():
+        multiplier = tf.random.uniform(
+            [1, 1, 1, 3],
+            cfg.channel_mult_min,
+            cfg.channel_mult_max
+        )
+        addend = tf.random.uniform(
+            [1, 1, 1, 3],
+            cfg.channel_add_min,
+            cfg.channel_add_max
+        )
+
+        return multiplier, addend
+
+    @staticmethod
+    def apply_photo_error(images, multiplier, addend, noise):
+        images = AdvNet.transform(images, multiplier, addend)
+        images += noise
+
+        return images
+
+    @staticmethod
+    def get_photo_error_args(images_shape):
+        multiplier = tf.random.uniform(
+            [images_shape[0], 1, 1, 1],
+            cfg.light_mult_min,
+            cfg.light_mult_max
+        )
+        addend = tf.random.uniform(
+            [images_shape[0], 1, 1, 1],
+            cfg.light_add_min,
+            cfg.light_add_max
+        )
+
+        gaussian_noise = tf.random.truncated_normal(
+            images_shape,
+            stddev=tf.random.uniform([1], maxval=cfg.stddev)
+        )
+
+        return multiplier, addend, gaussian_noise
+
+    @staticmethod
+    def transform(x, a, b):
+        """Apply transform a * x + b element-wise.
+
+         Parameters
+        ----------
+            x : tensor
+            a : tensor
+            b : tensor
+        """
+        return tf.add(tf.multiply(a, x), b)
 
     def preproc(self, images):
         # normalise images fed into the simulator
@@ -469,7 +645,7 @@ class AdvNet(nets.Net):
                 # train simulator for a couple of steps
                 for _ in range(self._hyper_params['NumPredictor']):
                     # ground truth labels are not needed for training the simulator
-                    data, _, target_label = next(data_generator)
+                    data, _, target_labels = next(data_generator)
                     # adds Random uniform noise to normal data
                     data = data + (np.random.rand(self._hyper_params['BatchSize'], 32, 32, 3) - 0.5) * 2 * NoiseRange
 
@@ -478,7 +654,7 @@ class AdvNet(nets.Net):
                     target_model_labels = self._enemy.infer(data)
                     loss, accuracy, globalStep, _ = self._sess.run([self._loss_simulator, self._accuracy, self._step,
                                                                     self._optimizerS],
-                                                                   feed_dict={self._textures: data,
+                                                                   feed_dict={self._std_textures: data,
                                                                               self._labels: target_model_labels})
                     print('\rSimulator => Step: ', globalStep,
                           '; Loss: %.3f' % loss,
@@ -486,14 +662,14 @@ class AdvNet(nets.Net):
                           end='')
 
                     adversarial_images = self._sess.run(self._adversarial_textures,
-                                                        feed_dict={self._textures: data,
-                                                                   self._adversarial_targets: target_label})
+                                                        feed_dict={self._std_textures: data,
+                                                                   self._adversarial_targets: target_labels})
                     # perform one optimisation step to train simulator so it has the same predictions as the target
                     # model does on adversarial images
                     target_model_labels = self._enemy.infer(adversarial_images)
                     loss, accuracy, globalStep, _ = self._sess.run([self._loss_simulator, self._accuracy, self._step,
                                                                     self._optimizerS],
-                                                                   feed_dict={self._textures: adversarial_images,
+                                                                   feed_dict={self._std_textures: adversarial_images,
                                                                               self._labels: target_model_labels})
 
                     self.simulator_loss_history.append(loss)
@@ -505,24 +681,15 @@ class AdvNet(nets.Net):
 
                 # train generator for a couple of steps
                 for _ in range(self._hyper_params['NumGenerator']):
-                    data, _, target_label = next(data_generator)
-                    target_model_labels = self._enemy.infer(data)
-
-                    # make sure target label is different than what the target model already outputs for that image
-                    for idx in range(data.shape[0]):
-                        if target_model_labels[idx] == target_label[idx]:
-                            tmp = random.randint(0, 9)
-                            while tmp == target_model_labels[idx]:
-                                tmp = random.randint(0, 9)
-                            target_label[idx] = tmp
+                    data, _, target_labels = next(data_generator)
 
                     loss, adversarial_images, globalStep, _ = self._sess.run([self._loss_generator,
                                                                               self._adversarial_textures,
                                                                               self._step, self._optimizerG],
-                                                                             feed_dict={self._textures: data,
-                                                                                        self._adversarial_targets: target_label})
+                                                                             feed_dict={self._std_textures: data,
+                                                                                        self._adversarial_targets: target_labels})
                     adversarial_predictions = self._enemy.infer(adversarial_images)
-                    tfr = np.mean(target_label == adversarial_predictions)
+                    tfr = np.mean(target_labels == adversarial_predictions)
                     ufr = np.mean(target_model_labels != adversarial_predictions)
 
                     self.generator_loss_history.append(loss)
@@ -562,7 +729,7 @@ class AdvNet(nets.Net):
             textures, _, _ = next(data_generator)
             target_model_labels = np.array(self._enemy.infer(textures))
             loss, accuracy, _ = self._sess.run([self._loss_simulator, self._accuracy, self._optimizerS],
-                                               feed_dict={self._textures: textures,
+                                               feed_dict={self._std_textures: textures,
                                                           self._labels: target_model_labels})
             print('\rSimulator => Step: ', idx - 300,
                   '; Loss: %.3f' % loss,
@@ -575,7 +742,7 @@ class AdvNet(nets.Net):
             textures, _, _ = next(data_generator)
             target_model_labels = np.array(self._enemy.infer(textures))
             loss, accuracy = self._sess.run([self._loss_simulator, self._accuracy],
-                                            feed_dict={self._textures: textures,
+                                            feed_dict={self._std_textures: textures,
                                                        self._labels: target_model_labels})
             warmup_accuracy += accuracy
         warmup_accuracy = warmup_accuracy / 50
@@ -603,7 +770,7 @@ class AdvNet(nets.Net):
                     target_labels[idx] = tmp
 
             loss, adversarial_images = self._sess.run([self._loss_generator, self._adversarial_textures],
-                                                      feed_dict={self._textures: data,
+                                                      feed_dict={self._std_textures: data,
                                                                  self._adversarial_targets: target_labels})
 
             adversarial_images = adversarial_images.clip(0, 255).astype(np.uint8)
@@ -642,7 +809,7 @@ class AdvNet(nets.Net):
                 target[idx] = tmp
 
         loss, adversarial_images = self._sess.run([self._loss_generator, self._adversarial_textures],
-                                                  feed_dict={self._textures: data,
+                                                  feed_dict={self._std_textures: data,
                                                              self._adversarial_targets: target})
         adversarial_images = adversarial_images.clip(0, 255).astype(np.uint8)
         results = self._enemy.infer(adversarial_images)
@@ -687,7 +854,7 @@ class AdvNet(nets.Net):
 
         adversary = \
             self._sess.run(self._adversarial_textures,
-                           feed_dict={self._textures: tmpdata,
+                           feed_dict={self._std_textures: tmpdata,
                                       self._adversarial_targets: tmptarget})
         adversary = adversary.clip(0, 255).astype(np.uint8)
 
@@ -713,7 +880,7 @@ if __name__ == '__main__':
     enemy.load('./TargetModel/netcifar100.ckpt-32401')
     tf.compat.v1.enable_eager_execution()
 
-    net = AdvNet([2048, 2048, 3], enemy, "SimpleNet")
+    net = AdvNet([2048, 2048, 3], [299, 299], enemy, "SimpleNet")
     data_generator = data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
 
     net.train(data_generator, path_save='./AttackCIFAR10/netcifar10.ckpt')
