@@ -1,6 +1,4 @@
-import os
 import moderngl
-from objloader import Obj
 from PIL import Image
 from pyrr import Matrix44
 import numpy as np
@@ -8,9 +6,9 @@ import numpy as np
 SAVE_RENDERS = True
 
 
-class Renderer:
+class UVRenderer:
 
-    def __init__(self, model_path, viewport=(299, 299)):
+    def __init__(self, obj_3d, viewport=(299, 299)):
         """
         Construct a Renderer object used to compute the UV mapping for a certain 3D model, in a certain pose with a
         random rotation, translation, camera distance, background, photo error and texture printing error. These random
@@ -18,12 +16,13 @@ class Renderer:
 
         Parameters
         ----------
-        model_path : string
-            Path to .obj file of the object that will be rendered.
+        obj_3d : objloader.Obj
+            Obj object representing the 3D model.
         viewport : tuple(int, int)
             width and height of the rendered image.
         """
         self.width, self.height = viewport
+        self.object = obj_3d
 
         # Create ModernGL context, which exposes OpenGL features. Require OpenGL 330 core profile
         self.ctx = moderngl.create_standalone_context(require=330)
@@ -77,30 +76,6 @@ class Renderer:
         self.mvp = self.prog["mvp"]
         self.vao = []
 
-        self.load_obj(model_path)
-
-    def load_obj(self, file_path):
-        """
-        Load 3D model from .obj file and create vertex array based on it.
-
-        Parameters
-        ----------
-        file_path : string
-            Path to .obj file of the object that will be rendered.
-        """
-        if not os.path.isfile(file_path):
-            print('{} is not an existing regular file!'.format(file_path))
-            return
-
-        obj = Obj.open(file_path)
-
-        # TODO: not very efficient, consider using an element index array later
-        # make vertex array with two attributes, in_vert as vec3 and in_text as vec_2
-        self.vao = self.ctx.simple_vertex_array(
-            self.prog,
-            self.ctx.buffer(obj.pack('vx vy vz tx ty')),
-            "in_vert", "in_text"
-        )
 
     def set_parameters(self,
                        camera_distance=(2.5, 3.0),
@@ -127,6 +102,9 @@ class Renderer:
 
         assert 0 <= deflection <= 1
         self.deflection = deflection
+
+    def set_obj(self, new_obj):
+        self.object = new_obj
 
     @staticmethod
     def rand_rotation_matrix(deflection=1.0, randnums=None):
@@ -173,7 +151,7 @@ class Renderer:
 
     def render(self, batch_size):
         """
-        Render a batch of images of the object, each time in a different random pose, and returns the UV mappings for
+        Render a batch of images of the obj_3d, each time in a different random pose, and returns the UV mappings for
         each.
 
         Parameters
@@ -185,6 +163,14 @@ class Renderer:
         warp
             Numpy array representing the UV mapping.
         """
+        # TODO: not very efficient, consider using an element index array later
+        # make vertex array from objloader.Obj object with two attributes, in_vert as vec3 and in_text as vec_2
+        self.vao = self.ctx.simple_vertex_array(
+            self.prog,
+            self.ctx.buffer(self.object.pack('vx vy vz tx ty')),
+            "in_vert", "in_text"
+        )
+
         warp = np.empty((batch_size, self.height, self.width, 2), dtype=np.float32)
 
         for i in range(batch_size):
