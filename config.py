@@ -29,9 +29,6 @@ flags.DEFINE_string('image_dir', 'adv_textures', 'directory for storing adversar
 #   renderer setting       #
 ############################
 
-flags.DEFINE_string('obj', 'dataset/barrel/barrel.obj', '.obj file path')
-flags.DEFINE_string('texture', 'dataset/barrel/barrel.jpg', 'texture file path')
-
 flags.DEFINE_float('camera_distance_min', 1.8, 'minimum camera distance')
 flags.DEFINE_float('camera_distance_max', 2.3, 'maximum camera distance')
 
