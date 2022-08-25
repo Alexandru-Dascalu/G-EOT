@@ -78,9 +78,6 @@ class Net:
         else:
             raise ValueError("Invalid simulator architecture argument!")
 
-        net = layers.GlobalAvgPool(net.output, name='GlobalAvgPool')
-        layers_list.append(net)
-
         return net.output
 
 
@@ -305,24 +302,24 @@ def SmallNet(standardized, step, ifTest, layer_list):
     return net
 
 
-def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
+def get_Simple_Net(standardized, step, ifTest, layers_list):
     # initial three layers in entry flow
     net = layers.Conv2D(standardized, convChannels=24, convKernel=[3, 3],
                         convStride=[2, 2], batch_norm=True,
                         step=step, ifTest=ifTest,
                         activation=layers.ReLU,
-                        name='{}Conv24'.format(name_prefix))
+                        name='P_Conv24')
     layers_list.append(net)
 
     net = layers.DepthwiseConv2D(net.output, convChannels=48, convKernel=[3, 3],
                                  batch_norm=True, step=step, ifTest=ifTest,
                                  activation=layers.ReLU,
-                                 name='{}DepthwiseConv48'.format(name_prefix))
+                                 name='P_DepthwiseConv48')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=96, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv96'.format(name_prefix),)
+                           name='P_SepConv96',)
     layers_list.append(net)
 
     # tensor is 150x150x96 now
@@ -331,19 +328,19 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
                           convStride=[2, 2], batch_norm=True,
                           step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          name='{}SepConv192Shortcut'.format(name_prefix))
+                          name='P_SepConv192Shortcut')
     layers_list.append(toadd)
     
     net = layers.SepConv2D(net.output, convChannels=192,
                            convKernel=[3, 3], convStride=[2, 2],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv192a'.format(name_prefix))
+                           name='P_SepConv192a')
     layers_list.append(net)
     # why does this not have activation?
     net = layers.SepConv2D(net.output, convChannels=192, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
-                           name='{}SepConv192b'.format(name_prefix))
+                           name='P_SepConv192b')
     layers_list.append(net)
     added = toadd.output + net.output
 
@@ -353,22 +350,22 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
                           convStride=[2, 2], batch_norm=True,
                           step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          name='{}SepConv384Shortcut'.format(name_prefix))
+                          name='P_SepConv384Shortcut')
     layers_list.append(toadd)
 
     # why activate this again?
-    net = layers.Activation(added, activation=layers.ReLU, name='{}ReLU384'.format(name_prefix))
+    net = layers.Activation(added, activation=layers.ReLU, name='P_ReLU384')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=384,
                            convKernel=[3, 3], convStride=[2, 2],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv384a'.format(name_prefix))
+                           name='P_SepConv384a')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=384, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv384b'.format(name_prefix))
+                           name='P_SepConv384b')
     layers_list.append(net)
     added = toadd.output + net.output
 
@@ -378,22 +375,22 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
                           convStride=[2, 2], batch_norm=True,
                           step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          name='{}SepConv768Shortcut'.format(name_prefix))
+                          name='P_SepConv768Shortcut')
     layers_list.append(toadd)
 
     # why activate this again?
-    net = layers.Activation(added, activation=layers.ReLU, name='{}ReLU768'.format(name_prefix))
+    net = layers.Activation(added, activation=layers.ReLU, name='P_ReLU768')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=768,
                            convKernel=[3, 3], convStride=[2, 2],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv768a'.format(name_prefix))
+                           name='P_SepConv768a')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv768b'.format(name_prefix))
+                           name='P_SepConv768b')
     layers_list.append(net)
     added = toadd.output + net.output
 
@@ -402,24 +399,24 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
     net = layers.SepConv2D(added, convChannels=768, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv768c'.format(name_prefix))
+                           name='P_SepConv768c')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv768d'.format(name_prefix))
+                           name='P_SepConv768d')
     layers_list.append(net)
     added = net.output + added
 
     net = layers.SepConv2D(added, convChannels=768, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv768e'.format(name_prefix))
+                           name='P_SepConv768e')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv768f'.format(name_prefix))
+                           name='P_SepConv768f')
     layers_list.append(net)
     added = net.output + added
 
@@ -429,18 +426,18 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
                           convStride=[2, 2], batch_norm=True,
                           step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          name='{}SepConv1024Shortcut'.format(name_prefix))
+                          name='P_SepConv1024Shortcut')
     layers_list.append(toadd)
 
     net = layers.SepConv2D(added, convChannels=1024, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv1024a'.format(name_prefix))
+                           name='P_SepConv1024a')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=1024, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv1024b'.format(name_prefix))
+                           name='P_SepConv1024b')
     layers_list.append(net)
     net = layers.Pooling(net.output, pool=layers.MaxPool, size=[3, 3], stride=[2, 2], name='MaxPool1')
     layers_list.append(net)
@@ -448,13 +445,13 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
 
     # tensor is 10x10x1024 now
     # why activate this? both toadd and net had RELU activation
-    net = layers.Activation(added, activation=layers.ReLU, name='{}ReLU11024'.format(name_prefix))
+    net = layers.Activation(added, activation=layers.ReLU, name='P_ReLU11024')
     layers_list.append(net)
 
     net = layers.SepConv2D(net.output, convChannels=1536, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv1536'.format(name_prefix))
+                           name='P_SepConv1536')
     layers_list.append(net)
     net = layers.GlobalAvgPool(net.output, name='GlobalAvgPool')
     layers_list.append(net)
