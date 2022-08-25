@@ -15,7 +15,6 @@ import data
 import layers
 import nets
 import encoders
-import target_model
 import preproc
 from uv_renderer import UVRenderer
 from config import cfg
@@ -875,10 +874,12 @@ class AdvNet(nets.Net):
 
 
 if __name__ == '__main__':
-    enemy = target_model.NetImageNet([299, 299, 3], "SmallNet")
-    tf.compat.v1.disable_eager_execution()
-    enemy.load('./TargetModel/netcifar100.ckpt-32401')
-    tf.compat.v1.enable_eager_execution()
+    enemy = tf.keras.applications.xception.Xception(
+        include_top=True,
+        weights=None,
+        classifier_activation=None
+    )
+    enemy.trainable = False
 
     net = AdvNet([2048, 2048, 3], [299, 299], enemy, "SimpleNet")
     data_generator = data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
