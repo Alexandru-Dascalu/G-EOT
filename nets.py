@@ -306,22 +306,31 @@ def SmallNet(standardized, step, ifTest, layer_list):
 
 
 def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
-    net = layers.DepthwiseConv2D(standardized, convChannels=48, convKernel=[3, 3],
+    # initial three layers in entry flow
+    net = layers.Conv2D(standardized, convChannels=24, convKernel=[3, 3],
+                        convStride=[2, 2], batch_norm=True,
+                        step=step, ifTest=ifTest,
+                        activation=layers.ReLU,
+                        name='{}Conv24'.format(name_prefix))
+    layers_list.append(net)
+
+    net = layers.DepthwiseConv2D(net.output, convChannels=48, convKernel=[3, 3],
                                  batch_norm=True, step=step, ifTest=ifTest,
                                  activation=layers.ReLU,
-                                 name='{}DepthwiseConv3x16'.format(name_prefix))
+                                 name='{}DepthwiseConv48'.format(name_prefix))
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=96, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
                            name='{}SepConv96'.format(name_prefix),)
     layers_list.append(net)
-    
+
+    # tensor is 150x150x96 now
+    # three blocks with skip connections
     toadd = layers.Conv2D(net.output, convChannels=192, convKernel=[1, 1],
-                          batch_norm=True, step=step, ifTest=ifTest,
+                          convStride=[2, 2], batch_norm=True,
+                          step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          pool=True, poolSize=[3, 3], poolStride=[2, 2],
-                          poolType=layers.MaxPool, poolPadding='SAME',
                           name='{}SepConv192Shortcut'.format(name_prefix))
     layers_list.append(toadd)
     
@@ -337,12 +346,13 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
                            name='{}SepConv192b'.format(name_prefix))
     layers_list.append(net)
     added = toadd.output + net.output
-    
+
+    # tensor is 75x75x192 now
+    # second skip connection block
     toadd = layers.Conv2D(added, convChannels=384, convKernel=[1, 1],
-                          batch_norm=True, step=step, ifTest=ifTest,
+                          convStride=[2, 2], batch_norm=True,
+                          step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          pool=True, poolSize=[3, 3], poolStride=[2, 2],
-                          poolType=layers.MaxPool, poolPadding='SAME',
                           name='{}SepConv384Shortcut'.format(name_prefix))
     layers_list.append(toadd)
 
@@ -360,14 +370,14 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
                            activation=layers.ReLU,
                            name='{}SepConv384b'.format(name_prefix))
     layers_list.append(net)
-    
     added = toadd.output + net.output
-    
+
+    # tensor is 38x38x384 now
+    # third skip connection block
     toadd = layers.Conv2D(added, convChannels=768, convKernel=[1, 1],
-                          batch_norm=True, step=step, ifTest=ifTest,
+                          convStride=[2, 2], batch_norm=True,
+                          step=step, ifTest=ifTest,
                           activation=layers.ReLU,
-                          pool=True, poolSize=[3, 3], poolStride=[2, 2],
-                          poolType=layers.MaxPool, poolPadding='SAME',
                           name='{}SepConv768Shortcut'.format(name_prefix))
     layers_list.append(toadd)
 
@@ -385,17 +395,70 @@ def get_Simple_Net(standardized, step, ifTest, layers_list, name_prefix=""):
                            activation=layers.ReLU,
                            name='{}SepConv768b'.format(name_prefix))
     layers_list.append(net)
-    
     added = toadd.output + net.output
 
-    # why activate this? both toadd and net had RELU activation
-    net = layers.Activation(added, activation=layers.ReLU, name='{}ReLU11024'.format(name_prefix))
+    # tensor is 19x19x768 now
+    # entering middle flow, with two skip blocks, no spatial reduction, 768 kernels
+    net = layers.SepConv2D(added, convChannels=768, convKernel=[3, 3],
+                           batch_norm=True, step=step, ifTest=ifTest,
+                           activation=layers.ReLU,
+                           name='{}SepConv768c'.format(name_prefix))
+    layers_list.append(net)
+    net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
+                           batch_norm=True, step=step, ifTest=ifTest,
+                           activation=layers.ReLU,
+                           name='{}SepConv768d'.format(name_prefix))
+    layers_list.append(net)
+    added = net.output + added
+
+    net = layers.SepConv2D(added, convChannels=768, convKernel=[3, 3],
+                           batch_norm=True, step=step, ifTest=ifTest,
+                           activation=layers.ReLU,
+                           name='{}SepConv768e'.format(name_prefix))
+    layers_list.append(net)
+    net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
+                           batch_norm=True, step=step, ifTest=ifTest,
+                           activation=layers.ReLU,
+                           name='{}SepConv768f'.format(name_prefix))
+    layers_list.append(net)
+    added = net.output + added
+
+    # tensor is 19x19x768 now
+    # entering exit flow
+    toadd = layers.Conv2D(added, convChannels=1024, convKernel=[1, 1],
+                          convStride=[2, 2], batch_norm=True,
+                          step=step, ifTest=ifTest,
+                          activation=layers.ReLU,
+                          name='{}SepConv1024Shortcut'.format(name_prefix))
+    layers_list.append(toadd)
+
+    net = layers.SepConv2D(added, convChannels=1024, convKernel=[3, 3],
+                           batch_norm=True, step=step, ifTest=ifTest,
+                           activation=layers.ReLU,
+                           name='{}SepConv1024a'.format(name_prefix))
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=1024, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='{}SepConv1024'.format(name_prefix))
+                           name='{}SepConv1024b'.format(name_prefix))
     layers_list.append(net)
+    net = layers.Pooling(net.output, pool=layers.MaxPool, size=[3, 3], stride=[2, 2], name='MaxPool1')
+    layers_list.append(net)
+    added = toadd.output + net.output
+
+    # tensor is 10x10x1024 now
+    # why activate this? both toadd and net had RELU activation
+    net = layers.Activation(added, activation=layers.ReLU, name='{}ReLU11024'.format(name_prefix))
+    layers_list.append(net)
+
+    net = layers.SepConv2D(net.output, convChannels=1536, convKernel=[3, 3],
+                           batch_norm=True, step=step, ifTest=ifTest,
+                           activation=layers.ReLU,
+                           name='{}SepConv1536'.format(name_prefix))
+    layers_list.append(net)
+    net = layers.GlobalAvgPool(net.output, name='GlobalAvgPool')
+    layers_list.append(net)
+
     return net
 
 
