@@ -3,8 +3,6 @@ from PIL import Image
 from pyrr import Matrix44
 import numpy as np
 
-SAVE_RENDERS = True
-
 
 class UVRenderer:
 
@@ -149,15 +147,19 @@ class UVRenderer:
 
         return M
 
-    def render(self, batch_size):
+    def render(self, i=0, save_render=False):
         """
         Render a batch of images of the obj_3d, each time in a different random pose, and returns the UV mappings for
         each.
 
         Parameters
         ----------
-        batch_size : int
-            Number of new different renders that will be created.
+        i : int
+            Number of uv mapping in batch. Used when naming the saved image the rendered image used for the uv map.
+            Only used if save_render is True, defaults to 0.
+        save_render : Bool
+            Wether the textureless renders used for computing the UV mappings should be saved as images. Defaults to
+            False.
         Returns
         -------
         warp
@@ -171,46 +173,43 @@ class UVRenderer:
             "in_vert", "in_text"
         )
 
-        warp = np.empty((batch_size, self.height, self.width, 2), dtype=np.float32)
+        translation_matrix = Matrix44.from_translation((
+            np.random.uniform(self.x_low, self.x_high),
+            np.random.uniform(self.y_low, self.y_high),
+            0.0
+        ))
 
-        for i in range(batch_size):
-            translation_matrix = Matrix44.from_translation((
-                np.random.uniform(self.x_low, self.x_high),
-                np.random.uniform(self.y_low, self.y_high),
-                0.0
-            ))
+        rotation_matrix = Matrix44.from_matrix33(
+            self.rand_rotation_matrix(self.deflection)
+        )
 
-            rotation_matrix = Matrix44.from_matrix33(
-                self.rand_rotation_matrix(self.deflection)
-            )
+        view_matrix = Matrix44.look_at(
+            (0.0, 0.0, np.random.uniform(self.close, self.far)),
+            (0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+        )
 
-            view_matrix = Matrix44.look_at(
-                (0.0, 0.0, np.random.uniform(self.close, self.far)),
-                (0.0, 0.0, 0.0),
-                (0.0, 1.0, 0.0),
-            )
+        projection_matrix = Matrix44.perspective_projection(
+            45.0, self.width / self.height, 0.1, 1000.0
+        )
 
-            projection_matrix = Matrix44.perspective_projection(
-                45.0, self.width / self.height, 0.1, 1000.0
-            )
+        # TODO: translation or rotation first?
+        transform = projection_matrix * view_matrix * translation_matrix * rotation_matrix
 
-            # TODO: translation or rotation first?
-            transform = projection_matrix * view_matrix * translation_matrix * rotation_matrix
+        # make frame buffer ready for new render
+        self.fbo.use()
+        self.fbo.clear()
 
-            # make frame buffer ready for new render
-            self.fbo.use()
-            self.fbo.clear()
+        # use computed transformation matrix as the MVP which will be used in the vertex shader
+        self.mvp.write(transform.astype('f4').tobytes())
+        self.vao.render()
 
-            # use computed transformation matrix as the MVP which will be used in the vertex shader
-            self.mvp.write(transform.astype('f4').tobytes())
-            self.vao.render()
+        if save_render:
+            Image.frombytes('RGB', self.fbo.size, self.fbo.read(), 'raw', 'RGB', 0, -1).save(
+                'training_renders/scene_{}.jpg'.format(i))
 
-            if SAVE_RENDERS:
-                Image.frombytes('RGB', self.fbo.size, self.fbo.read(), 'raw', 'RGB', 0, -1).save(
-                    'training_renders/scene_{}.jpg'.format(i))
-
-            framebuffer = self.fbo.read(components=2, dtype='f4')
-            warp[i] = np.frombuffer(framebuffer, dtype=np.float32).reshape(
-                (self.height, self.width, 2))[::-1]
+        framebuffer = self.fbo.read(components=2, dtype='f4')
+        warp = np.frombuffer(framebuffer, dtype=np.float32).reshape(
+            (self.height, self.width, 2))[::-1]
 
         return warp

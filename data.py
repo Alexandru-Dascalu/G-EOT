@@ -6,6 +6,8 @@ from PIL import Image
 from objloader import Obj
 
 import preproc
+import uv_renderer
+from config import cfg
 
 DATA_DIR = "D:\\Informatica\\GAN-EOT\\GAN-EOT\\dataset"
 
@@ -98,10 +100,11 @@ def generate_data_label_pair(models):
 
     while True:
         index = next(index_generator)
-        image = models[index].raw_texture
+        texture = models[index].raw_texture
+        obj = models[index].obj
         labels = models[index].labels
 
-        yield image, labels
+        yield texture, obj, labels
 
 
 def get_data_generator(batch_size):
@@ -150,23 +153,34 @@ def get_adversarial_data_generators(batch_size):
     labels for that texture.
     """
     models = load_dataset(DATA_DIR)
+    renderer = uv_renderer.UVRenderer(None)
+    renderer.set_parameters(
+        camera_distance=(cfg.camera_distance_min, cfg.camera_distance_max),
+        x_translation=(cfg.x_translation_min, cfg.x_translation_max),
+        y_translation=(cfg.y_translation_min, cfg.y_translation_max)
+    )
 
     def generate_adversarial_batch():
         generator = generate_data_label_pair(models)
 
         while True:
             batch_textures = []
+            batch_uv_maps = []
             batch_labels = []
             batch_target_labels = []
 
-            for _ in range(batch_size):
-                texture, labels = next(generator)
+            for i in range(batch_size):
+                texture, obj, labels = next(generator)
                 batch_textures.append(texture)
                 batch_labels.append(labels)
+
+                renderer.set_obj(obj)
+                batch_uv_maps.append(renderer.render(i, save_render=True))
+
                 batch_target_labels.append(get_random_target_label(labels))
 
             batch_target_labels = np.array(batch_target_labels)
-            yield batch_textures, batch_labels, batch_target_labels
+            yield batch_textures, batch_uv_maps, batch_labels, batch_target_labels
 
     return generate_adversarial_batch()
 
