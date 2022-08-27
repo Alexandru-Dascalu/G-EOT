@@ -179,7 +179,10 @@ def get_adversarial_data_generators(batch_size):
 
                 batch_target_labels.append(get_random_target_label(labels))
 
+            batch_textures = np.stack(batch_textures)
+            batch_uv_maps = np.stack(batch_uv_maps)
             batch_target_labels = np.array(batch_target_labels)
+
             yield batch_textures, batch_uv_maps, batch_labels, batch_target_labels
 
     return generate_adversarial_batch()
