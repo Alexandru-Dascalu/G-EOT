@@ -212,4 +212,6 @@ class UVRenderer:
         warp = np.frombuffer(framebuffer, dtype=np.float32).reshape(
             (self.height, self.width, 2))[::-1]
 
+        # de-normalise UV map, so that it will have texture coordinates between 0 and 2047
+        warp = warp * np.asarray([2047, 2047], dtype=np.float32)
         return warp
