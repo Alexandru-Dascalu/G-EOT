@@ -4,37 +4,25 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 
+import preproc
+
 
 class Net:
 
     def __init__(self):
-        self._layers = []
-        self._variables = []
         self._body = None
-        self._inference = None
-        self._layer_losses = None
-        self._saver = None
-
-        self._graph = tf.Graph()
-        self._sess = tf.compat.v1.Session(graph=self._graph)
-
-        with self._graph.as_default():
-            # variable to keep check if network is being tested or trained
-            self._ifTest = tf.Variable(False, name='ifTest', trainable=False, dtype=tf.bool)
-            # define operations to set ifTest variable
-            self._phaseTrain = tf.compat.v1.assign(self._ifTest, False)
-            self._phaseTest = tf.compat.v1.assign(self._ifTest, True)
-
-            self._step = tf.Variable(0, name='step', trainable=False, dtype=tf.int32)
 
         self.generator_loss_history = []
-        self.generator_accuracy_history = []
+        self.generator_l2_loss_history = []
+        self.generator_tfr_history = []
+
         self.simulator_loss_history = []
         self.simulator_accuracy_history = []
+
         self.test_loss_history = []
         self.test_accuracy_history = []
 
-    def body(self, images, architecture, num_middle=2, for_generator=False):
+    def body(self, images, architecture, num_middle=2):
         """
         Defines the body of the NN and adds all layers to the layers list of the NN.
 
@@ -57,15 +45,12 @@ class Net:
             Output of NN as a Tensor.
         """
         # preprocess images
-        standardized = self.preproc(images)
+        standardized = preproc.normalise_images_for_net(images)
 
         # when we duplicate the simulator, with the same weights, and tie it to the generator output, we do not want to
         # double the regularisation losses for each layer. Therefore, we pass in an empty list, so that layers are not
         # added a second time to self._layers. If subclass is a target model, this argument should always be False
-        if for_generator:
-            layers_list = []
-        else:
-            layers_list = self._layers
+        layers_list = self._layers
 
         if architecture == "SimpleNet":
             net = get_Simple_Net(standardized, self._step, self._ifTest, layers_list)
@@ -80,49 +65,9 @@ class Net:
 
         return net.output
 
-
-    def preproc(self, images):
-        pass
-
-    def inference(self, logits):
+    def train(self, data_generator):
         """
-        Computes hard label prediction (label is one categrical value, not a vector of probabilities for each class.)
-
-        Parameters
-        ----------
-        logits : Tensor
-            Tensor representing the output of the NN with one minibatch as input.
-
-        Returns
-        ----------
-        predictions
-            A tensor with the label prediction for every sample in the minibatch.
-        """
-        pass
-
-    def loss(self, logits, labels, name):
-        """
-        Computes loss function of the NN.
-
-        Parameters
-        ----------
-        logits : Tensor
-            Tensor representing the output of the NN with one minibatch as input.
-        labels : Tensor
-            Tensor representing labels of each sample in minibatch. Are they always soft or hard labels?
-        name : string
-            Name of loss function.
-
-        Returns
-        ----------
-        predictions
-            A tensor with the label prediction for every sample in the minibatch.
-        """
-        pass
-
-    def train(self, training_data_generator, test_data_generator, path_load=None, path_save=None):
-        """
-        Trains network according the the hyper params of the Net subclass.
+        Trains network according the hyper params of the Net subclass.
 
         Parameters
         ----------
@@ -174,7 +119,7 @@ class Net:
             self.simulator_loss_history = array_dict['arr_0']
             self.simulator_accuracy_history = array_dict['arr_1']
             self.generator_loss_history = array_dict['arr_2']
-            self.generator_accuracy_history = array_dict['arr_3']
+            self.generator_tfr_history = array_dict['arr_3']
             self.test_loss_history = array_dict['arr_4']
             self.test_accuracy_history = array_dict['arr_5']
             print("Training history restored.")
@@ -191,7 +136,7 @@ class Net:
         plt.show()
 
         plt.plot(self.simulator_accuracy_history, label="Simulator")
-        plt.plot(self.generator_accuracy_history, label="Generator")
+        plt.plot(self.generator_tfr_history, label="Generator")
         test_steps = list(range(0, len(self.simulator_accuracy_history) + 1, test_after))
         plt.plot(test_steps, self.test_accuracy_history, label="Generator Test")
         plt.xlabel("Steps")
@@ -199,15 +144,6 @@ class Net:
         plt.title("{} TFR history".format(model))
         plt.legend()
         plt.show()
-
-    @property
-    def summary(self):
-        summs = []
-        summs.append("=>Network Summary: ")
-        for elem in self._layers:
-            summs.append(elem.summary)
-        summs.append("<=Network Summary: ")
-        return "\n\n".join(summs)
 
 
 # has two fewer layers compared to diagram in paper, misses last two conv 128 layers
@@ -298,7 +234,7 @@ def SmallNet(standardized, step, ifTest, layer_list):
                         activation=layers.ReLU,
                         name='Conv10', dtype=tf.float32)
     layer_list.append(net)
-    
+
     return net
 
 
@@ -319,7 +255,7 @@ def get_Simple_Net(standardized, step, ifTest, layers_list):
     net = layers.SepConv2D(net.output, convChannels=96, convKernel=[3, 3],
                            batch_norm=True, step=step, ifTest=ifTest,
                            activation=layers.ReLU,
-                           name='P_SepConv96',)
+                           name='P_SepConv96')
     layers_list.append(net)
 
     # tensor is 150x150x96 now
@@ -330,7 +266,7 @@ def get_Simple_Net(standardized, step, ifTest, layers_list):
                           activation=layers.ReLU,
                           name='P_SepConv192Shortcut')
     layers_list.append(toadd)
-    
+
     net = layers.SepConv2D(net.output, convChannels=192,
                            convKernel=[3, 3], convStride=[2, 2],
                            batch_norm=True, step=step, ifTest=ifTest,
@@ -461,7 +397,7 @@ def get_Simple_Net(standardized, step, ifTest, layers_list):
 
 def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
     # why does this not have activation?
-    net = layers.DepthwiseConv2D(standardized, convChannels=3*16,
+    net = layers.DepthwiseConv2D(standardized, convChannels=48,
                                  convKernel=[3, 3], convStride=[1, 1],
                                  convInit=layers.XavierInit, convPadding='SAME',
                                  biasInit=layers.const_init(0.0),
@@ -477,7 +413,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                              activation=layers.ReLU,
                              name='Stage1_Conv_48a', dtype=tf.float32)
     layers_list.append(toconcat)
-    
+
     net = layers.Conv2D(toconcat.output, convChannels=96,
                         convKernel=[1, 1], convStride=[1, 1],
                         convInit=layers.XavierInit, convPadding='SAME',
@@ -502,9 +438,9 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                         activation=layers.Linear,
                         name='Stage1_Conv1x1_48b', dtype=tf.float32)
     layers_list.append(net)
-    
+
     concated = tf.concat([toconcat.output, net.output], axis=3)
-    
+
     toconcat = layers.Conv2D(concated, convChannels=96,
                              convKernel=[3, 3], convStride=[1, 1],
                              convInit=layers.XavierInit, convPadding='SAME',
@@ -513,7 +449,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                              activation=layers.ReLU,
                              name='Stage2_Conv_96a', dtype=tf.float32)
     layers_list.append(toconcat)
-    
+
     net = layers.Conv2D(toconcat.output, convChannels=192,
                         convKernel=[1, 1], convStride=[1, 1],
                         convInit=layers.XavierInit, convPadding='SAME',
@@ -538,9 +474,9 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                         activation=layers.Linear,
                         name='Stage2_Conv1x1_96b', dtype=tf.float32)
     layers_list.append(net)
-    
+
     concated = tf.concat([toconcat.output, net.output], axis=3)
-    
+
     toconcat = layers.Conv2D(concated, convChannels=192,
                              convKernel=[3, 3], convStride=[1, 1],
                              convInit=layers.XavierInit, convPadding='SAME',
@@ -551,7 +487,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                              poolType=layers.MaxPool, poolPadding='SAME',
                              name='Stage3_Conv_192a', dtype=tf.float32)
     layers_list.append(toconcat)
-    
+
     net = layers.Conv2D(toconcat.output, convChannels=384,
                         convKernel=[1, 1], convStride=[1, 1],
                         convInit=layers.XavierInit, convPadding='SAME',
@@ -576,9 +512,9 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                         activation=layers.Linear,
                         name='Stage3_Conv1x1_192b', dtype=tf.float32)
     layers_list.append(net)
-    
+
     concated = tf.concat([toconcat.output, net.output], axis=3)
-    
+
     toconcat = layers.Conv2D(concated, convChannels=384,
                              convKernel=[3, 3], convStride=[1, 1],
                              convInit=layers.XavierInit, convPadding='SAME',
@@ -589,7 +525,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                              poolType=layers.MaxPool, poolPadding='SAME',
                              name='Stage4_Conv_384a', dtype=tf.float32)
     layers_list.append(toconcat)
-    
+
     net = layers.Conv2D(toconcat.output, convChannels=768,
                         convKernel=[1, 1], convStride=[1, 1],
                         convInit=layers.XavierInit, convPadding='SAME',
@@ -614,7 +550,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                         activation=layers.Linear,
                         name='Stage4_Conv1x1_384b', dtype=tf.float32)
     layers_list.append(net)
-    
+
     concated = tf.concat([toconcat.output, net.output], axis=3)
     # again, this layer does not show up in diagram
     toadd = layers.Conv2D(concated, convChannels=768,
@@ -626,34 +562,34 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                           name='SepConv768Toadd', dtype=tf.float32)
     layers_list.append(toadd)
     conved = toadd.output
-    
+
     for idx in range(numMiddle):
-        net = layers.Activation(conved, layers.ReLU, name='ActMiddle'+str(idx)+'_1')
+        net = layers.Activation(conved, layers.ReLU, name='ActMiddle' + str(idx) + '_1')
         layers_list.append(net)
         net = layers.SepConv2D(net.output, convChannels=768,
                                convKernel=[3, 3], convStride=[1, 1],
                                convInit=layers.XavierInit, convPadding='SAME',
                                biasInit=layers.const_init(0.0),
                                batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
-                               name='ConvMiddle'+str(idx)+'_1', dtype=tf.float32)
+                               name='ConvMiddle' + str(idx) + '_1', dtype=tf.float32)
         layers_list.append(net)
-        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle'+str(idx)+'_2')
-        layers_list.append(net)
-        net = layers.SepConv2D(net.output, convChannels=768,
-                               convKernel=[3, 3], convStride=[1, 1],
-                               convInit=layers.XavierInit, convPadding='SAME',
-                               biasInit=layers.const_init(0.0),
-                               batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
-                               name='ConvMiddle'+str(idx)+'_2', dtype=tf.float32)
-        layers_list.append(net)
-        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle'+str(idx)+'_3')
+        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle' + str(idx) + '_2')
         layers_list.append(net)
         net = layers.SepConv2D(net.output, convChannels=768,
                                convKernel=[3, 3], convStride=[1, 1],
                                convInit=layers.XavierInit, convPadding='SAME',
                                biasInit=layers.const_init(0.0),
                                batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
-                               name='ConvMiddle'+str(idx)+'_3', dtype=tf.float32)
+                               name='ConvMiddle' + str(idx) + '_2', dtype=tf.float32)
+        layers_list.append(net)
+        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle' + str(idx) + '_3')
+        layers_list.append(net)
+        net = layers.SepConv2D(net.output, convChannels=768,
+                               convKernel=[3, 3], convStride=[1, 1],
+                               convInit=layers.XavierInit, convPadding='SAME',
+                               biasInit=layers.const_init(0.0),
+                               batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
+                               name='ConvMiddle' + str(idx) + '_3', dtype=tf.float32)
         layers_list.append(net)
         conved = net.output + conved
 
@@ -667,7 +603,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                           poolType=layers.MaxPool, poolPadding='SAME',
                           name='ConvExit1x1_1', dtype=tf.float32)
     layers_list.append(toadd)
-    
+
     net = layers.Activation(conved, layers.ReLU, name='ActExit768_1')
     layers_list.append(net)
 
@@ -682,7 +618,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                              poolType=layers.MaxPool, poolPadding='SAME',
                              name='ConvExit768_1', dtype=tf.float32)
     layers_list.append(toconcat)
-    
+
     net = layers.Conv2D(toconcat.output, convChannels=1536,
                         convKernel=[1, 1], convStride=[1, 1],
                         convInit=layers.XavierInit, convPadding='SAME',
@@ -707,7 +643,7 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
                         activation=layers.Linear,
                         name='Exit_Conv1x1_768b', dtype=tf.float32)
     layers_list.append(net)
-   
+
     concated = tf.concat([toconcat.output, net.output], axis=3)
     added = concated + toadd.output
 
@@ -722,12 +658,11 @@ def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
     layers_list.append(net)
     net = layers.GlobalAvgPool(net.output, name='GlobalAvgPool')
     layers_list.append(net)
-    
+
     return net
 
 
 def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
-    
     net = layers.Conv2D(standardized, convChannels=32,
                         convKernel=[3, 3], convStride=[1, 1],
                         convInit=layers.XavierInit, convPadding='SAME',
@@ -744,7 +679,7 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                         activation=layers.ReLU,
                         name='ConvEntry64_1', dtype=tf.float32)
     layers_list.append(net)
-    
+
     toadd = layers.Conv2D(net.output, convChannels=128,
                           convKernel=[1, 1], convStride=[1, 1],
                           convInit=layers.XavierInit, convPadding='SAME',
@@ -752,7 +687,7 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                           batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                           name='ConvEntry1x1_1', dtype=tf.float32)
     layers_list.append(toadd)
-    
+
     net = layers.SepConv2D(net.output, convChannels=128,
                            convKernel=[3, 3], convStride=[1, 1],
                            convInit=layers.XavierInit, convPadding='SAME',
@@ -768,9 +703,9 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                            batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                            name='ConvEntry128_2', dtype=tf.float32)
     layers_list.append(net)
-    
+
     added = toadd.output + net.output
-    
+
     toadd = layers.Conv2D(added, convChannels=256,
                           convKernel=[1, 1], convStride=[2, 2],
                           convInit=layers.XavierInit, convPadding='SAME',
@@ -778,7 +713,7 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                           batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                           name='ConvEntry1x1_2', dtype=tf.float32)
     layers_list.append(toadd)
-    
+
     acted = layers.Activation(added, layers.ReLU, name='ReLUEntry256_0')
     layers_list.append(acted)
     net = layers.SepConv2D(acted.output, convChannels=256,
@@ -799,7 +734,7 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                            name='ConvEntry256_2', dtype=tf.float32)
     layers_list.append(net)
     added = toadd.output + net.output
-    
+
     toadd = layers.Conv2D(added, convChannels=728,
                           convKernel=[1, 1], convStride=[2, 2],
                           convInit=layers.XavierInit, convPadding='SAME',
@@ -807,7 +742,7 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                           batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                           name='ConvEntry1x1_3', dtype=tf.float32)
     layers_list.append(toadd)
-    
+
     acted = layers.Activation(added, layers.ReLU, name='ReLUEntry728_0')
     layers_list.append(acted)
     net = layers.SepConv2D(acted.output, convChannels=728,
@@ -829,37 +764,37 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
     layers_list.append(net)
     added = toadd.output + net.output
     conved = added
-    
-    for idx in range(numMiddle): 
-        net = layers.Activation(conved, layers.ReLU, name='ActMiddle'+str(idx)+'_1')
+
+    for idx in range(numMiddle):
+        net = layers.Activation(conved, layers.ReLU, name='ActMiddle' + str(idx) + '_1')
         layers_list.append(net)
         net = layers.SepConv2D(net.output, convChannels=728,
                                convKernel=[3, 3], convStride=[1, 1],
                                convInit=layers.XavierInit, convPadding='SAME',
                                biasInit=layers.const_init(0.0),
                                batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
-                               name='ConvMiddle'+str(idx)+'_1', dtype=tf.float32)
+                               name='ConvMiddle' + str(idx) + '_1', dtype=tf.float32)
         layers_list.append(net)
-        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle'+str(idx)+'_2')
-        layers_list.append(net)
-        net = layers.SepConv2D(net.output, convChannels=728,
-                               convKernel=[3, 3], convStride=[1, 1],
-                               convInit=layers.XavierInit, convPadding='SAME',
-                               biasInit=layers.const_init(0.0),
-                               batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
-                               name='ConvMiddle'+str(idx)+'_2', dtype=tf.float32)
-        layers_list.append(net)
-        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle'+str(idx)+'_3')
+        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle' + str(idx) + '_2')
         layers_list.append(net)
         net = layers.SepConv2D(net.output, convChannels=728,
                                convKernel=[3, 3], convStride=[1, 1],
                                convInit=layers.XavierInit, convPadding='SAME',
                                biasInit=layers.const_init(0.0),
                                batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
-                               name='ConvMiddle'+str(idx)+'_3', dtype=tf.float32)
+                               name='ConvMiddle' + str(idx) + '_2', dtype=tf.float32)
+        layers_list.append(net)
+        net = layers.Activation(net.output, layers.ReLU, name='ReLUMiddle' + str(idx) + '_3')
+        layers_list.append(net)
+        net = layers.SepConv2D(net.output, convChannels=728,
+                               convKernel=[3, 3], convStride=[1, 1],
+                               convInit=layers.XavierInit, convPadding='SAME',
+                               biasInit=layers.const_init(0.0),
+                               batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
+                               name='ConvMiddle' + str(idx) + '_3', dtype=tf.float32)
         layers_list.append(net)
         conved = net.output + conved
-    
+
     toadd = layers.Conv2D(conved, convChannels=1024,
                           convKernel=[1, 1], convStride=[2, 2],
                           convInit=layers.XavierInit, convPadding='SAME',
@@ -867,7 +802,7 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                           batch_norm=True, step=step, ifTest=ifTest, epsilon=1e-5,
                           name='ConvExit1x1_1', dtype=tf.float32)
     layers_list.append(toadd)
-    
+
     net = layers.Activation(conved, layers.ReLU, name='ActExit728_1')
     layers_list.append(net)
     net = layers.SepConv2D(net.output, convChannels=728,
@@ -888,7 +823,7 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
                            name='ConvExit1024_1', dtype=tf.float32)
     layers_list.append(net)
     added = toadd.output + net.output
-    
+
     net = layers.SepConv2D(added, convChannels=1536,
                            convKernel=[3, 3], convStride=[1, 1],
                            convInit=layers.XavierInit, convPadding='SAME',
@@ -907,5 +842,5 @@ def Xception(standardized, step, ifTest, layers_list, numMiddle=8):
     layers_list.append(net)
     net = layers.GlobalAvgPool(net.output, name='GlobalAvgPool')
     layers_list.append(net)
-    
+
     return net

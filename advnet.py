@@ -1,4 +1,3 @@
-import PIL.Image
 import tensorflow as tf
 # gpu = tf.config.list_physical_devices('GPU')[0]
 # tf.config.experimental.set_memory_growth(gpu, True)
@@ -6,7 +5,6 @@ import tensorflow as tf
 #     gpu,
 #     [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
 
-import tensorflow_addons as tfa
 import matplotlib.pyplot as plt
 import random
 import numpy as np
@@ -16,9 +14,10 @@ import layers
 import nets
 import encoders
 import preproc
-from config import cfg
+import differentiable_rendering as diff_rendering
 
 NoiseRange = 10.0
+cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
 
 
 def create_encoder(textures, step, ifTest, layers_list):
@@ -26,7 +25,7 @@ def create_encoder(textures, step, ifTest, layers_list):
 
 
 def create_generator(textures, targets, num_experts, step, ifTest, layers_list):
-    textures = preproc.normalise_images(textures)
+    textures = preproc.normalise_images_for_net(textures)
     encoder = create_encoder(textures, step, ifTest, layers_list)
 
     net = layers.DeConv2D(encoder.output, convChannels=128,
@@ -85,7 +84,7 @@ def create_generator(textures, targets, num_experts, step, ifTest, layers_list):
 
 def create_simulator_SimpleNet(images, step, ifTest, layers_list):
     # define simulator with an architecture almost identical to SimpleNet in the paper
-    net = layers.DepthwiseConv2D(preproc.normalise_images(tf.clip_by_value(images, 0, 255)), convChannels=3 * 16,
+    net = layers.DepthwiseConv2D(preproc.normalise_images_for_net(tf.clip_by_value(images, 0, 255)), convChannels=3 * 16,
                                  convKernel=[3, 3], convStride=[1, 1],
                                  convInit=layers.XavierInit, convPadding='SAME',
                                  biasInit=layers.const_init(0.0),
@@ -219,7 +218,7 @@ def create_simulator_SimpleNet(images, step, ifTest, layers_list):
 
 def create_simulatorG_SimpleNet(images, step, ifTest):
     # define simulator with an architecture almost identical to SimpleNet in the paper
-    net = layers.DepthwiseConv2D(preproc.normalise_images(tf.clip_by_value(images, 0, 255)), convChannels=3 * 16,
+    net = layers.DepthwiseConv2D(preproc.normalise_images_for_net(tf.clip_by_value(images, 0, 255)), convChannels=3 * 16,
                                  convKernel=[3, 3], convStride=[1, 1],
                                  convInit=layers.XavierInit, convPadding='SAME',
                                  biasInit=layers.const_init(0.0),
@@ -350,434 +349,210 @@ hyper_params_imagenet = {'BatchSize': 6,
 
 class AdvNet(nets.Net):
 
-    def __init__(self, texture_shape, image_shape, architecture, hyper_params=None):
+    def __init__(self, image_shape, architecture, hyper_params=None):
         nets.Net.__init__(self)
 
         if hyper_params is None:
             hyper_params = hyper_params_imagenet
         self._hyper_params = hyper_params
+        self.image_shape = image_shape
 
-        # the targeted neural network model
-        with self._graph.as_default():
-            self._enemy = tf.keras.applications.inception_v3.InceptionV3(
-                include_top=True,
-                weights='imagenet',
-                classifier_activation=None
-            )
-            self._enemy.trainable = False
+        self.enemy = tf.keras.applications.inception_v3.InceptionV3(
+            include_top=True,
+            weights='imagenet',
+            classifier_activation=None
+        )
+        self.enemy.trainable = False
 
-            # Inputs
-            self._std_textures = tf.compat.v1.placeholder(dtype=tf.float32,
-                                                          shape=[self._hyper_params['BatchSize']] + texture_shape,
-                                                          name='textures')
-            self.uv_mappings = tf.compat.v1.placeholder(dtype=tf.float32,
-                                                        shape=[self._hyper_params['BatchSize']] + image_shape + [2],
-                                                        name='uv_mappings')
-            self._labels = tf.compat.v1.placeholder(dtype=tf.int64, shape=[self._hyper_params['BatchSize']],
-                                                    name='imagenet_labels')
-            self._adversarial_targets = tf.compat.v1.placeholder(dtype=tf.int64,
-                                                                 shape=[self._hyper_params['BatchSize']],
-                                                                 name='target_labels')
+        # Inputs
+        self.adv_images = tf.zeros(shape=[self._hyper_params['BatchSize']] + self.image_shape + [3], dtype=tf.float32,
+                                   name="adversarial images")
 
-            # define generator
-            with tf.compat.v1.variable_scope('Generator', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._generator = create_generator(self._std_textures, self._adversarial_targets,
-                                                   self._hyper_params['NumSubnets'], self._step,
-                                                   self._ifTest, self._layers)
-            self._adversarial_textures = tf.compat.v1.clip_by_value(self._generator + self._std_textures, 0, 255)
+        # define generator
+        self.generator = create_generator(self._hyper_params['NumSubnets'])
+        # define simulator
+        self.simulator = self.create_simulator(architecture)
 
-            self._print_multiplier, self._print_addend = AdvNet.get_print_error_args()
-            self._photo_multiplier, self._photo_addend, self._photo_noise = AdvNet.get_photo_error_args(
-                [self._hyper_params['BatchSize']] + image_shape + [3])
-            self._colour = AdvNet.get_background_colour()
+        learning_rate_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            self._hyper_params['LearningRate'], decay_steps=self._hyper_params['DecayAfter'],
+            decay_rate=self._hyper_params['DecayRate'])
 
-            # rendering pipeline outputs images with pixel values between 0 and 1
-            self._std_images = self.get_rendering_pipeline(self._std_textures)
-            self._adv_images = self.get_rendering_pipeline(self._adversarial_textures)
+        self.generator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
+        self.simulator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
 
-            self._target_model_labels = tf.argmax(input=self._enemy(tf.identity(2.0 * self._std_images - 1.0)), axis=-1,
-                                                  name='enemy_inference')
-
-            # define simulator
-            with tf.compat.v1.variable_scope('Simulator', reuse=tf.compat.v1.AUTO_REUSE) as scope:
-                self._simulator = self.body(self._std_images, architecture, for_generator=False)
-                # what is the point of this??? Why is the generator training against a different simulator, which is
-                # not trained to match the target model? Why is one simulator trained on normal images, and another on
-                # adversarial images?
-                self._simulatorG = self.body(self._adv_images, architecture, for_generator=True)
-
-            # define inference as hard label prediction of simulator on natural images
-            self._inference = self.inference(self._simulator)
-            # accuracy is how often simulator prediction matches the prediction of the target net
-            self._accuracy = tf.reduce_mean(input_tensor=tf.cast(tf.equal(self._inference, self._target_model_labels),
-                                                                 dtype=tf.float32))
-
-            self._layer_losses = 0
-            for elem in self._layers:
-                if len(elem.losses) > 0:
-                    for loss in elem.losses:
-                        self._layer_losses += loss
-
-            # simulator loss matches simulator output against output of target model
-            self._loss_simulator = self.loss(self._simulator, self._target_model_labels, name='lossP')
-            self._loss_simulator += self._layer_losses
-
-            # generator trains to produce perturbations that make the simulator produce the desired target labels
-            self._loss_generator = self.loss(self._simulatorG, self._adversarial_targets, name='lossG')
-            self._loss_generator += self._hyper_params['NoiseDecay'] * tf.reduce_mean(
-                input_tensor=tf.norm(tensor=self._generator)) + self._layer_losses
-
-            self._lr = tf.compat.v1.train.exponential_decay(self._hyper_params['LearningRate'],
-                                                            global_step=self._step,
-                                                            decay_steps=self._hyper_params['DecayAfter'],
-                                                            decay_rate=self._hyper_params['DecayRate'])
-            self._lr += self._hyper_params['MinLearningRate']
-
-            print(self.summary)
-            # Saver
-            self._saver = tf.compat.v1.train.Saver(max_to_keep=5)
-
-    def body(self, images, architecture, num_middle=2, for_generator=False):
+    def create_simulator(self, images, architecture, num_middle=2):
         # define body of simulator
-        net_output = super().body(images, architecture, num_middle, for_generator)
+        net_output = super().body(images, architecture, num_middle)
         logits = layers.FullyConnected(net_output, outputSize=1000, activation=layers.Linear,
                                        reuse=tf.compat.v1.AUTO_REUSE,
                                        name='S_FC_classes')
-        if not for_generator:
-            self._layers.append(logits)
 
         return logits.output
 
-    def get_rendering_pipeline(self, textures):
-        """Use UV mapping to create batch_seize images with both the normal and adversarial texture, then pass the
-        adversarial images as input to the victim model to get logits. UV mapping is the matrix M used to transform
-        texture x into the image with rendered object, as explained in the paper.
-
-        Returns
-        -------
-        Tensor of shape batch_size x 1000, representing the logits obtained by passing the adversarial images as
-        input to the victim model.
+    # define inference as hard label prediction of simulator on natural images
+    @staticmethod
+    def inference(logits):
         """
-        # create each image in batch from texture one at a time. We do this instead of all at once so that we need less
-        # memory (a 12 x 2048 x 2048 x 3 tensor is 600 MB, and we would create multiple ones). We make the first image
-        # outside of the loop to initialise the list of new images, and to avoid putting an if statement in the loop
-        new_images = self.create_image(textures[0], self.uv_mappings[0])
-        for i in range(cfg.batch_size - 1):
-            image = self.create_image(textures[i], self.uv_mappings[i])
-            new_images = tf.concat([new_images, image], axis=0)
-
-        # add background colour to rendered images.
-        new_images = self.add_background(new_images)
-
-        # check if we apply random noise to simulate camera noise
-        if cfg.photo_error:
-            new_images = AdvNet.apply_photo_error(new_images, self._photo_multiplier, self._photo_addend,
-                                                  self._photo_noise)
-
-        new_images = AdvNet.general_normalisation(new_images)
-        return new_images
-
-    def create_image(self, texture, uv_mapping):
-        """Create an image from the given texture using the given UV mapping.
+        Computes hard label prediction (label is one categorical value, not a vector of probabilities for each class.)
 
         Parameters
         ----------
-        texture : Tensor
-            Tensor representing the 2048x2048x3 texture of this 3D model. Texture is must have pixel values between 0
-            and 255.
-        uv_mapping : numpy array
-            A numpy array with shape [image_height, image_width, 2]. Represents the UV mappings for an
-            image in the batch. This mappign is used to create the images from the textures.
+        logits : Tensor
+            Tensor representing the output of the NN with one minibatch as input.
 
         Returns
-        -------
-        tuple
-            Two tensors. The first one is of shape num_new_renders x 299 x 299 x 3, representing the images of the new
-            renders with the normal texture. The second is of shape num_new_renders x 299 x 299 x 3, representing the images
-            of the new renders with the adversarial texture.
-        """
-        # check if we should add print errors, so that the adversarial texture may be used for a 3D printed object
-        # and still be effective
-        if cfg.print_error:
-            new_texture = AdvNet.transform(tf.identity(texture / 255), self._print_multiplier, self._print_addend)
-        else:
-            # tfa.resampler requires input to be in shape batch_size x height x width x channels, so we insert a new
-            # dimension
-            new_texture = tf.expand_dims(tf.identity(texture / 255), axis=0)
-
-        # tfa.image.resampler requires the first dimension of UV map to be
-        # batch size, so we add an extra dimension with one element
-        image_uv_map = tf.expand_dims(uv_mapping, axis=0)
-
-        # use UV mapping to create an images corresponding to an individual render by sampling from the texture
-        # Resulting tensors are of shape 1 x image_width x image_height x 3
-        new_image = tfa.image.resampler(new_texture, image_uv_map)
-
-        return new_image
-
-    def add_background(self, images):
-        """Colours the background pixels of the image with a random colour.
-        """
-        # compute a mask with True values for each pixel which represents the object, and False for background pixels.
-        mask = tf.reduce_all(input_tensor=tf.not_equal(self.uv_mappings, 0.0), axis=3, keepdims=True)
-
-        return AdvNet.set_background(images, mask, self._colour)
-
-    @staticmethod
-    def get_background_colour():
-        return tf.random.uniform([cfg.batch_size, 1, 1, 3], cfg.background_min, cfg.background_max)
-
-    @staticmethod
-    def set_background(x, mask, colours):
-        """Sets background color of an image according to a boolean mask.
-
-        Parameters
         ----------
-            x: A 4-D tensor with shape [batch_size, height, size, 3]
-                The images to which a background will be added.
-            mask: boolean mask with shape [batch_size, height, width, 1]
-                The mask used for determining where are the background pixels. Has False for background pixels,
-                True otherwise.
-            colours: tensor with shape [batch_size, 1, 1, 3].
-                The background colours for each image
+        predictions
+            A tensor with the label prediction for every sample in the minibatch.
         """
-        mask = tf.tile(mask, [1, 1, 1, 3])
-        inverse_mask = tf.logical_not(mask)
-
-        return tf.cast(mask, tf.float32) * x + tf.cast(inverse_mask, tf.float32) * colours
-
-    @staticmethod
-    def get_print_error_args():
-        multiplier = tf.random.uniform(
-            [1, 1, 1, 3],
-            cfg.channel_mult_min,
-            cfg.channel_mult_max
-        )
-        addend = tf.random.uniform(
-            [1, 1, 1, 3],
-            cfg.channel_add_min,
-            cfg.channel_add_max
-        )
-
-        return multiplier, addend
-
-    @staticmethod
-    def apply_photo_error(images, multiplier, addend, noise):
-        images = AdvNet.transform(images, multiplier, addend)
-        images += noise
-
-        return images
-
-    @staticmethod
-    def get_photo_error_args(images_shape):
-        multiplier = tf.random.uniform(
-            [images_shape[0], 1, 1, 1],
-            cfg.light_mult_min,
-            cfg.light_mult_max
-        )
-        addend = tf.random.uniform(
-            [images_shape[0], 1, 1, 1],
-            cfg.light_add_min,
-            cfg.light_add_max
-        )
-
-        gaussian_noise = tf.random.truncated_normal(
-            images_shape,
-            stddev=tf.random.uniform([1], maxval=cfg.stddev)
-        )
-
-        return multiplier, addend, gaussian_noise
-
-    @staticmethod
-    def transform(x, a, b):
-        """Apply transform a * x + b element-wise.
-
-         Parameters
-        ----------
-            x : tensor
-            a : tensor
-            b : tensor
-        """
-        return tf.add(tf.multiply(a, x), b)
-
-    @staticmethod
-    def general_normalisation(x):
-        minimum = tf.reduce_min(input_tensor=x, axis=[1, 2, 3], keepdims=True)
-        maximum = tf.reduce_max(input_tensor=x, axis=[1, 2, 3], keepdims=True)
-
-        minimum = tf.minimum(minimum, 0)
-        maximum = tf.maximum(maximum, 1)
-
-        return (x - minimum) / (maximum - minimum)
-
-    def preproc(self, images):
-        # normalise images fed into the simulator. Assumes input is normalised to values between 0 and 1.
-        casted = tf.cast(images, tf.float32)
-        # normalise values to -1 and 1
-        standardized = tf.identity(2 * casted - 1.0, name='training_standardized')
-
-        return standardized
-
-    def inference(self, logits):
         return tf.argmax(input=logits, axis=-1, name='inference')
 
-    def enemy_inference(self, images):
-        enemy_logits = self._enemy(images)
-        enemy_predictions = tf.argmax(input=enemy_logits, axis=-1, name='enemy_inference')
+    @staticmethod
+    def accuracy(predictions, labels):
+        return tf.reduce_mean(input_tensor=tf.cast(tf.equal(predictions, labels), dtype=tf.float32))
 
-        return self._sess.run(enemy_predictions)
-
-    def loss(self, logits, labels, name='cross_entropy'):
-        net = layers.CrossEntropy(logits, labels, name=name)
-        self._layers.append(net)
-        return net.output
-
-    def train(self, data_generator, path_load=None, path_save=None):
+    def train(self, data_generator):
         print("\n Begin Training: \n")
-        with self._graph.as_default():
-            self._step_inc = tf.compat.v1.assign(self._step, self._step + 1)
 
-            self._varsS = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='Simulator')
-            # define optimisers
-            self._optimizerS = tf.compat.v1.train.AdamOptimizer(self._lr, epsilon=1e-8).minimize(self._loss_simulator,
-                                                                                                 var_list=self._varsS)
-            self._optimizerG = self._get_generator_optimiser()
+        self.warm_up_simulator()
+        self.evaluate(data_generator)
 
-            # Initialize all
-            self._sess.run(tf.compat.v1.global_variables_initializer())
+        globalStep = 0
+        # main training loop
+        while globalStep < self._hyper_params['TotalSteps']:
+            # train simulator for a couple of steps
+            for _ in range(self._hyper_params['NumSimulator']):
+                # ground truth labels are not needed for training the simulator
+                textures, uv_maps, _, target_labels = next(data_generator)
 
-            if path_load is not None:
-                self.load(path_load)
-            else:
-                self._warm_up_simulator()
+                # perform one optimisation step to train simulator so it has the same predictions as the target
+                # model does on adversarial images
+                adversarial_textures = self.generator(textures) + textures
+                print('\rSimulator => Step: {}'.format(globalStep), end='')
+                self.simulator_training_step(adversarial_textures, uv_maps)
 
-            self.evaluate(data_generator)
-            self._sess.run([self._phaseTrain])
-            if path_save is not None:
-                self.save(path_save)
+                # adds Random uniform noise to normal data
+                textures += (np.random.rand(self._hyper_params['BatchSize'], 32, 32, 3) - 0.5) * 2 * NoiseRange
+                # perform one optimisation step to train simulator so it has the same predictions as the target
+                # model does on normal images with noise
+                print('\rSimulator => Step: {}'.format(globalStep), end='')
+                self.simulator_training_step(textures, uv_maps)
 
-            globalStep = 0
-            # main training loop
-            while globalStep < self._hyper_params['TotalSteps']:
-                self._sess.run(self._step_inc)
+            # train generator for a couple of steps
+            for _ in range(self._hyper_params['NumGenerator']):
+                textures, uv_maps, true_labels, target_labels = next(data_generator)
+                self.generator_training_step(textures, uv_maps, target_labels)
 
-                # train simulator for a couple of steps
-                for _ in range(self._hyper_params['NumPredictor']):
-                    # ground truth labels are not needed for training the simulator
-                    data, _, target_labels = next(data_generator)
-                    # adds Random uniform noise to normal data
-                    data = data + (np.random.rand(self._hyper_params['BatchSize'], 32, 32, 3) - 0.5) * 2 * NoiseRange
+                enemy_labels = AdvNet.inference(self.enemy(self.adv_images))
+                tfr = np.mean(target_labels.numpy() == enemy_labels.numpy())
+                ufr = np.mean(true_labels != enemy_labels.numpy())
+                self.generator_tfr_history.append(tfr)
+                print('; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
 
-                    # perform one optimisation step to train simulator so it has the same predictions as the target
-                    # model does on normal images with noise
-                    target_model_labels = self._enemy.infer(data)
-                    loss, accuracy, globalStep, _ = self._sess.run([self._loss_simulator, self._accuracy, self._step,
-                                                                    self._optimizerS],
-                                                                   feed_dict={self._std_textures: data,
-                                                                              self._labels: target_model_labels})
-                    print('\rSimulator => Step: ', globalStep,
-                          '; Loss: %.3f' % loss,
-                          '; Accuracy: %.3f' % accuracy,
-                          end='')
+            # evaluate on test every so often
+            if globalStep % self._hyper_params['ValidateAfter'] == 0:
+                self.evaluate(data_generator)
 
-                    adversarial_images = self._sess.run(self._adversarial_textures,
-                                                        feed_dict={self._std_textures: data,
-                                                                   self._adversarial_targets: target_labels})
-                    # perform one optimisation step to train simulator so it has the same predictions as the target
-                    # model does on adversarial images
-                    target_model_labels = self._enemy.infer(adversarial_images)
-                    loss, accuracy, globalStep, _ = self._sess.run([self._loss_simulator, self._accuracy, self._step,
-                                                                    self._optimizerS],
-                                                                   feed_dict={self._std_textures: adversarial_images,
-                                                                              self._labels: target_model_labels})
-
-                    self.simulator_loss_history.append(loss)
-                    self.simulator_accuracy_history.append(accuracy)
-                    print('\rSimulator => Step: ', globalStep,
-                          '; Loss: %.3f' % loss,
-                          '; Accuracy: %.3f' % accuracy,
-                          end='')
-
-                # train generator for a couple of steps
-                for _ in range(self._hyper_params['NumGenerator']):
-                    data, _, target_labels = next(data_generator)
-
-                    loss, adversarial_images, globalStep, _ = self._sess.run([self._loss_generator,
-                                                                              self._adversarial_textures,
-                                                                              self._step, self._optimizerG],
-                                                                             feed_dict={self._std_textures: data,
-                                                                                        self._adversarial_targets: target_labels})
-                    adversarial_predictions = self._enemy.infer(adversarial_images)
-                    tfr = np.mean(target_labels == adversarial_predictions)
-                    ufr = np.mean(target_model_labels != adversarial_predictions)
-
-                    self.generator_loss_history.append(loss)
-                    self.generator_accuracy_history.append(tfr)
-                    print('\rGenerator => Step: ', globalStep,
-                          '; Loss: %.3f' % loss,
-                          '; TFR: %.3f' % tfr,
-                          '; UFR: %.3f' % ufr,
-                          end='')
-
-                # evaluate on test every so often
-                if globalStep % self._hyper_params['ValidateAfter'] == 0:
-                    self.evaluate(data_generator)
-                    if path_save is not None:
-                        self.save(path_save)
-                        np.savez("./AttackCIFAR10/training_history", self.simulator_loss_history,
-                                 self.simulator_accuracy_history, self.generator_loss_history,
-                                 self.generator_accuracy_history, self.test_loss_history, self.test_accuracy_history)
-
-                    self._sess.run([self._phaseTrain])
-
-    def _get_generator_optimiser(self):
-        varsG = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='Generator')
-
-        optimizerG = tf.compat.v1.train.AdamOptimizer(self._lr, epsilon=1e-8)
-        gradientsG = optimizerG.compute_gradients(self._loss_generator, var_list=varsG)
-
-        # clip generator optimiser gradients
-        clipped_gradients = [(tf.clip_by_value(grad, -1.0, 1.0), var) for grad, var in gradientsG]
-
-        return optimizerG.apply_gradients(clipped_gradients)
-
-    def _warm_up_simulator(self):
+    def warm_up_simulator(self):
         # warm up simulator to match predictions of target model on clean images
         print('Warming up. ')
-        for idx in range(self._hyper_params['WarmupSteps']):
+        for i in range(self._hyper_params['WarmupSteps']):
             textures, uv_maps, _, _ = next(data_generator)
-            loss, accuracy, _ = self._sess.run([self._loss_simulator, self._accuracy, self._optimizerS],
-                                               feed_dict={self._std_textures: textures,
-                                                          self.uv_mappings: uv_maps})
+            self.simulator_training_step(textures, uv_maps)
 
-            print('\rSimulator => Step: ', idx - self._hyper_params['WarmupSteps'],
-                  '; Loss: %.3f' % loss,
-                  '; Accuracy: %.3f' % accuracy,
-                  end='')
+            print('\rSimulator => Step: ', i - self._hyper_params['WarmupSteps'], end='')
 
         # evaluate warmed up simulator on test data
         warmup_accuracy = 0.0
-        for idx in range(50):
+        print("Evaluating warmed up simulator:")
+        for i in range(50):
             textures, uv_maps, true_labels, _ = next(data_generator)
-            loss, accuracy, simulator_labels, target_model_labels, std_textures = self._sess.run([self._loss_simulator,
-                                                                                                self._accuracy,
-                                                                                                self._inference,
-                                                                                                self._target_model_labels,
-                                                                                                self._std_textures],
-                                                                                               feed_dict={
-                                                                                                   self._std_textures: textures,
-                                                                                                   self.uv_mappings: uv_maps})
-            print("\nTarget model labels {}".format(target_model_labels))
-            print("Simulator labels {}".format(simulator_labels))
-            print("True labels {}".format(true_labels))
+            warmup_accuracy += self.warm_up_evaluation(textures, uv_maps)
 
-            for i in range(6):
-                img = np.array(std_textures[i], dtype=np.uint8)
-                plt.imshow(PIL.Image.fromarray(img))
-
-            warmup_accuracy += accuracy
         warmup_accuracy = warmup_accuracy / 50
-        print('\nWarmup Accuracy: ', warmup_accuracy)
+        print('\nAverage Warmup Accuracy: ', warmup_accuracy)
+
+    def simulator_training_step(self, textures, uv_maps):
+        with tf.GradientTape() as simulator_tape:
+            print_error_params = diff_rendering.get_print_error_args()
+            photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
+                                                                     self.image_shape + [3])
+            background_colours = diff_rendering.get_background_colours()
+
+            images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+                                           background_colours)
+
+            sim_loss = self.simulator_loss(images)
+
+        simulator_gradients = simulator_tape.gradient(sim_loss, self.simulator.trainable_variables)
+        self.simulator_optimiser.apply_gradients(zip(simulator_gradients, self.simulator.trainable_variables))
+
+    def generator_training_step(self, std_textures, uv_maps, target_labels):
+        with tf.GradientTape() as generator_tape:
+            gen_loss = self.generator_loss(std_textures, uv_maps, target_labels)
+
+        generator_gradients = generator_tape.gradient(gen_loss, self.generator.trainable_variables)
+        # clip generator gradients
+        generator_gradients = [(tf.clip_by_value(grad, -1.0, 1.0), var) for grad, var in generator_gradients]
+
+        self.generator_optimiser.apply_gradients(zip(generator_gradients), self.generator.trainable_variables)
+
+    # generator trains to produce perturbations that make the simulator produce the desired target label
+    def generator_loss(self, textures, uv_maps, target_labels):
+        adversarial_noises = self.generator(textures)
+        adversarial_textures = textures + adversarial_noises
+
+        print_error_params = diff_rendering.get_print_error_args()
+        photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] + self.image_shape + [3])
+        background_colour = diff_rendering.get_background_colours()
+        self.adv_images = diff_rendering.render(adversarial_textures, uv_maps, print_error_params,
+                                                photo_error_params, background_colour)
+
+        simulator_logits = self.simulator(self.adv_images)
+
+        main_loss = cross_entropy(logits=simulator_logits, labels=target_labels)
+        main_loss = tf.reduce_mean(main_loss)
+
+        l2_penalty = self._hyper_params['NoiseDecay'] * tf.reduce_mean(input_tensor=tf.norm(tensor=adversarial_noises))
+
+        self.generator_loss_history.append(main_loss.numpy())
+        self.generator_l2_loss_history.append(l2_penalty.numpy())
+
+        loss = main_loss + l2_penalty
+        print("; Loss: %.3f" % loss.numpy(), end='')
+
+        return main_loss + l2_penalty
+
+    def simulator_loss(self, images):
+        simulator_logits = self.simulator(images)
+        enemy_model_labels = AdvNet.inference(self.enemy(images))
+
+        loss = cross_entropy(logits=simulator_logits, labels=enemy_model_labels)
+        loss = tf.reduce_mean(loss)
+
+        self.simulator_loss_history.append(loss.numpy())
+        print("; Loss: %.3f" % loss.numpy(), end='')
+
+        accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
+        self.simulator_accuracy_history.append(accuracy.numpy())
+        print("; Accuracy: %.3f" % accuracy.numpy(), end='')
+        return loss
+
+    def warm_up_evaluation(self, textures, uv_maps):
+        print_error_params = diff_rendering.get_print_error_args()
+        photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
+                                                                 self.image_shape + [3])
+        background_colours = diff_rendering.get_background_colours()
+
+        images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+                                       background_colours)
+
+        simulator_logits = self.simulator(images)
+        enemy_model_labels = AdvNet.inference(self.enemy(images))
+
+        accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
+        print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
+        return accuracy
 
     def evaluate(self, test_data_generator, path=None):
         if path is not None:
@@ -913,5 +688,5 @@ if __name__ == '__main__':
     net = AdvNet([2048, 2048, 3], [299, 299], "SimpleNet")
     data_generator = data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
 
-    net.train(data_generator, path_save='./AttackCIFAR10/netcifar10.ckpt')
+    net.train(data_generator)
     net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])

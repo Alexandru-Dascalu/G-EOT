@@ -4,10 +4,10 @@ import numpy as np
 import tensorflow as tf
 
 
-def normalise_images(images):
+def normalise_images_for_net(images):
     # normalise images with 0 to 255 values to -1 to 1
     casted = tf.cast(images, tf.float32)
-    standardized = tf.identity(casted / 127.5 - 1.0, name='training_standardized')
+    standardized = tf.identity(casted / 127.5 - 1.0, name='normalisation for net')
 
     return standardized
 
