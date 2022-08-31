@@ -501,6 +501,7 @@ class AdvNet(nets.Net):
     def generator_loss(self, textures, uv_maps, target_labels):
         adversarial_noises = self.generator(textures)
         adversarial_textures = textures + adversarial_noises
+        adversarial_textures = diff_rendering.general_normalisation(adversarial_textures)
 
         print_error_params = diff_rendering.get_print_error_args()
         photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] + self.image_shape + [3])
@@ -554,38 +555,36 @@ class AdvNet(nets.Net):
         print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
         return accuracy
 
-    def evaluate(self, test_data_generator, path=None):
-        if path is not None:
-            self.load(path)
-
+    def evaluate(self, test_data_generator):
         total_loss = 0.0
         total_tfr = 0.0
         total_ufr = 0.0
 
-        self._sess.run([self._phaseTest])
         for _ in range(self._hyper_params['TestSteps']):
-            data, _, target_labels = next(test_data_generator)
-            target_model_labels = self._enemy.infer(data)
+            textures, uv_maps, true_labels, target_labels = next(test_data_generator)
+            # create adv image by adding the generated adversarial noise
+            textures += self.generator(textures)
+            textures = diff_rendering.general_normalisation(textures)
 
-            # for each batch image, make sure target label is different than the predicted label by the target model
-            for idx in range(data.shape[0]):
-                if target_model_labels[idx] == target_labels[idx]:
-                    tmp = random.randint(0, 9)
-                    while tmp == target_model_labels[idx]:
-                        tmp = random.randint(0, 9)
-                    target_labels[idx] = tmp
+            # use adversarial textures to render adversarial images
+            print_error_params = diff_rendering.get_print_error_args()
+            photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
+                                                                     self.image_shape + [3])
+            background_colours = diff_rendering.get_background_colours()
+            images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+                                           background_colours)
 
-            loss, adversarial_images = self._sess.run([self._loss_generator, self._adversarial_textures],
-                                                      feed_dict={self._std_textures: data,
-                                                                 self._adversarial_targets: target_labels})
+            # evaluate adversarial images on target model
+            enemy_model_logits = self.enemy(images)
+            enemy_model_labels = AdvNet.inference(enemy_model_logits)
 
-            adversarial_images = adversarial_images.clip(0, 255).astype(np.uint8)
-            adversarial_predictions = self._enemy.infer(adversarial_images)
+            main_loss = cross_entropy(logits=enemy_model_logits, labels=target_labels)
+            main_loss = tf.reduce_mean(main_loss)
 
-            tfr = np.mean(target_labels == adversarial_predictions)
-            ufr = np.mean(target_model_labels != adversarial_predictions)
+            tfr = np.mean(target_labels.numpy() == enemy_model_labels.numpy())
+            ufr = np.mean(true_labels.numpy() != enemy_model_labels.numpy())
 
-            total_loss += loss
+            total_loss += main_loss
             total_tfr += tfr
             total_ufr += ufr
 
@@ -595,9 +594,7 @@ class AdvNet(nets.Net):
 
         self.test_loss_history.append(total_loss)
         self.test_accuracy_history.append(total_tfr)
-        print('\nTest: Loss: ', total_loss,
-              '; TFR: ', total_tfr,
-              '; UFR: ', total_ufr)
+        print('\nTest: Loss: ', total_loss, '; TFR: ', total_tfr, '; UFR: ', total_ufr)
 
     def sample(self, test_data_generator, path=None):
         if path is not None:
