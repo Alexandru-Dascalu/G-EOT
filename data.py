@@ -29,7 +29,10 @@ class Model3D:
         image_path = Model3D._get_image_path(path)
 
         texture_image = Image.open(image_path)
-        raw_image = np.array(texture_image)
+        # cast pixel values to float
+        raw_image = np.array(texture_image).astype(np.float32)
+        # normalise pixel vaues to between 0 and 1
+        raw_image = raw_image / 255.0
         texture_image.close()
 
         # some raw textures have an alfa channel too, we only want three colour channels

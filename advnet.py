@@ -60,7 +60,7 @@ hyper_params_imagenet = {'BatchSize': 6,
                          'DecayAfter': 300,
                          'ValidateAfter': 300,
                          'TestSteps': 50,
-                         'WarmupSteps': 200,
+                         'WarmupSteps': 500,
                          'TotalSteps': 30000}
 
 
@@ -74,7 +74,7 @@ class AdvNet(nets.Net):
         self._hyper_params = hyper_params
         self.image_shape = image_shape
 
-        self.enemy = tf.keras.applications.inception_v3.InceptionV3(
+        self.enemy = tf.keras.applications.xception.Xception(
             include_top=True,
             weights='imagenet',
             classifier_activation=None
@@ -172,9 +172,7 @@ class AdvNet(nets.Net):
         # warm up simulator to match predictions of target model on clean images
         print('Warming up. ')
         for i in range(self._hyper_params['WarmupSteps']):
-            textures, uv_maps, true_labels, _ = next(data_generator)
-            # normalise textures to values between 0 and 1
-            textures = textures.astype(np.float32) / 255.0
+            textures, uv_maps, _, _ = next(data_generator)
 
             print('\rSimulator => Step: ', i - self._hyper_params['WarmupSteps'], end='')
             self.simulator_training_step(textures, uv_maps)
@@ -183,9 +181,7 @@ class AdvNet(nets.Net):
         warmup_accuracy = 0.0
         print("Evaluating warmed up simulator:")
         for i in range(50):
-            textures, uv_maps, true_labels, _ = next(data_generator)
-            # normalise textures to values between 0 and 1
-            textures = textures.astype(np.float32) / 255.0
+            textures, uv_maps, _, _ = next(data_generator)
             warmup_accuracy += self.warm_up_evaluation(textures, uv_maps)
 
         warmup_accuracy = warmup_accuracy / 50
@@ -259,8 +255,8 @@ class AdvNet(nets.Net):
 
         return main_loss + l2_penalty
 
+    # images must have pixel values between 0 and 1
     def simulator_loss(self, images):
-        images = preproc.normalise_images_for_net(images)
         simulator_logits = self.simulator(images)
         enemy_model_labels = AdvNet.inference(self.enemy(images))
 
