@@ -204,15 +204,17 @@ class AdvNet(nets.Net):
         return accuracy
 
     def simulator_training_step(self, textures, uv_maps):
+        # create rendering params and then render render image. We do not need to differentiate through the rendering
+        # for the simulator, therefore this can be done outside of the gradient tape.
+        print_error_params = diff_rendering.get_print_error_args()
+        photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
+                                                                 self.image_shape + [3])
+        background_colours = diff_rendering.get_background_colours()
+
+        images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+                                       background_colours)
+
         with tf.GradientTape() as simulator_tape:
-            print_error_params = diff_rendering.get_print_error_args()
-            photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
-                                                                     self.image_shape + [3])
-            background_colours = diff_rendering.get_background_colours()
-
-            images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
-                                           background_colours)
-
             sim_loss = self.simulator_loss(images)
 
         simulator_gradients = simulator_tape.gradient(sim_loss, self.simulator.trainable_variables)
@@ -314,10 +316,6 @@ class AdvNet(nets.Net):
 
 
 if __name__ == '__main__':
-    gpu = tf.config.list_physical_devices('GPU')[0]
-    print(tf.test.is_gpu_available())
-    print(tf.test.gpu_device_name())
-
     net = AdvNet([299, 299], "SimpleNet")
     data_generator = data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
 
