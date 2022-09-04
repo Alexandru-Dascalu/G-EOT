@@ -5,11 +5,10 @@ import tensorflow as tf
 
 
 def normalise_images_for_net(images):
-    # normalise images with 0 to 255 values to -1 to 1
-    casted = tf.cast(images, tf.float32)
-    standardized = tf.identity(casted / 127.5 - 1.0, name='normalisation for net')
+    # normalise images with 0 to 1 float32 values to -1 to 1
+    images = tf.identity(2.0 * images - 1.0, name='normalisation for net')
 
-    return standardized
+    return images
 
 
 def generate_index(size, shuffle=True):
