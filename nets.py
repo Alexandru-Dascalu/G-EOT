@@ -1,10 +1,13 @@
 import tensorflow as tf
-import layers
+from layers import conv2d_bn, sep_conv2d_bn, depthwise_conv2d_bn
 import numpy as np
 import os
 import matplotlib.pyplot as plt
 
 import preproc
+
+
+relu = tf.keras.activations.relu
 
 
 class Net:
@@ -22,7 +25,7 @@ class Net:
         self.test_loss_history = []
         self.test_accuracy_history = []
 
-    def body(self, images, architecture, num_middle=2):
+    def create_simulator(self, architecture, num_middle=2):
         """
         Defines the body of the NN and adds all layers to the layers list of the NN.
 
@@ -44,16 +47,9 @@ class Net:
         outputs
             Output of NN as a Tensor.
         """
-        # preprocess images
-        standardized = preproc.normalise_images_for_net(images)
-
-        # when we duplicate the simulator, with the same weights, and tie it to the generator output, we do not want to
-        # double the regularisation losses for each layer. Therefore, we pass in an empty list, so that layers are not
-        # added a second time to self._layers. If subclass is a target model, this argument should always be False
-        layers_list = self._layers
 
         if architecture == "SimpleNet":
-            net = get_Simple_Net(standardized, self._step, self._ifTest, layers_list)
+            images, output = get_Simple_Net()
         elif architecture == "SmallNet":
             net = SmallNet(standardized, self._step, self._ifTest, layers_list)
         elif architecture == "ConcatNet":
@@ -63,7 +59,7 @@ class Net:
         else:
             raise ValueError("Invalid simulator architecture argument!")
 
-        return net.output
+        return images, output
 
     def train(self, data_generator):
         """
@@ -81,7 +77,7 @@ class Net:
         """
         pass
 
-    def evaluate(self, test_data_generator, path=None):
+    def evaluate(self, test_data_generator):
         """
         Evaluates trained (or in training) model across several minibatches from the test set. The number of batches is
         a hyper param of the Net subclass.
@@ -238,161 +234,68 @@ def SmallNet(standardized, step, ifTest, layer_list):
     return net
 
 
-def get_Simple_Net(standardized, step, ifTest, layers_list):
+def get_Simple_Net():
     # initial three layers in entry flow
-    net = layers.Conv2D(standardized, convChannels=24, convKernel=[3, 3],
-                        convStride=[2, 2], batch_norm=True,
-                        step=step, ifTest=ifTest,
-                        activation=layers.ReLU,
-                        name='P_Conv24')
-    layers_list.append(net)
-
-    net = layers.DepthwiseConv2D(net.output, convChannels=48, convKernel=[3, 3],
-                                 batch_norm=True, step=step, ifTest=ifTest,
-                                 activation=layers.ReLU,
-                                 name='P_DepthwiseConv48')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=96, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv96')
-    layers_list.append(net)
+    images = tf.keras.layers.Input(shape=(299, 299, 3), dtype=tf.float32)
+    x = conv2d_bn(images, filters=24, kernel_size=3, strides=2, activation=relu)
+    x = depthwise_conv2d_bn(x, filters=48, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=96, kernel_size=3, activation=relu)
 
     # tensor is 150x150x96 now
     # three blocks with skip connections
-    toadd = layers.Conv2D(net.output, convChannels=192, convKernel=[1, 1],
-                          convStride=[2, 2], batch_norm=True,
-                          step=step, ifTest=ifTest,
-                          activation=layers.ReLU,
-                          name='P_SepConv192Shortcut')
-    layers_list.append(toadd)
+    toadd = conv2d_bn(x, filters=192, kernel_size=1, strides=2, activation=None)
 
-    net = layers.SepConv2D(net.output, convChannels=192,
-                           convKernel=[3, 3], convStride=[2, 2],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv192a')
-    layers_list.append(net)
-    # why does this not have activation?
-    net = layers.SepConv2D(net.output, convChannels=192, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           name='P_SepConv192b')
-    layers_list.append(net)
-    added = toadd.output + net.output
+    x = sep_conv2d_bn(x, filters=192, kernel_size=3, strides=2, activation=relu)
+    x = sep_conv2d_bn(x, filters=192, kernel_size=3, activation=None)
+    x = tf.keras.layers.Add()([x, toadd])
 
     # tensor is 75x75x192 now
     # second skip connection block
-    toadd = layers.Conv2D(added, convChannels=384, convKernel=[1, 1],
-                          convStride=[2, 2], batch_norm=True,
-                          step=step, ifTest=ifTest,
-                          activation=layers.ReLU,
-                          name='P_SepConv384Shortcut')
-    layers_list.append(toadd)
+    toadd = conv2d_bn(x, filters=384, kernel_size=1, strides=2, activation=None)
 
-    # why activate this again?
-    net = layers.Activation(added, activation=layers.ReLU, name='P_ReLU384')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=384,
-                           convKernel=[3, 3], convStride=[2, 2],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv384a')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=384, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv384b')
-    layers_list.append(net)
-    added = toadd.output + net.output
+    x = tf.keras.layers.Activation(activation=relu)(x)
+    x = sep_conv2d_bn(x, filters=384, kernel_size=3, strides=2, activation=relu)
+    x = sep_conv2d_bn(x, filters=384, kernel_size=3, activation=None)
+    x = tf.keras.layers.Add()([x, toadd])
 
     # tensor is 38x38x384 now
     # third skip connection block
-    toadd = layers.Conv2D(added, convChannels=768, convKernel=[1, 1],
-                          convStride=[2, 2], batch_norm=True,
-                          step=step, ifTest=ifTest,
-                          activation=layers.ReLU,
-                          name='P_SepConv768Shortcut')
-    layers_list.append(toadd)
+    toadd = conv2d_bn(x, filters=768, kernel_size=1, strides=2, activation=None)
 
-    # why activate this again?
-    net = layers.Activation(added, activation=layers.ReLU, name='P_ReLU768')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=768,
-                           convKernel=[3, 3], convStride=[2, 2],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv768a')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv768b')
-    layers_list.append(net)
-    added = toadd.output + net.output
+    x = tf.keras.layers.Activation(activation=relu)(x)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, strides=2, activation=relu)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=None)
+    toadd = tf.keras.layers.Add()([x, toadd])
 
     # tensor is 19x19x768 now
     # entering middle flow, with two skip blocks, no spatial reduction, 768 kernels
-    net = layers.SepConv2D(added, convChannels=768, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv768c')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv768d')
-    layers_list.append(net)
-    added = net.output + added
+    x = tf.keras.layers.Activation(activation=relu)(toadd)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=None)
+    toadd = tf.keras.layers.Add()([x, toadd])
 
-    net = layers.SepConv2D(added, convChannels=768, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv768e')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=768, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv768f')
-    layers_list.append(net)
-    added = net.output + added
+    x = tf.keras.layers.Activation(activation=relu)(toadd)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=None)
+    x = tf.keras.layers.Add()([x, toadd])
 
     # tensor is 19x19x768 now
-    # entering exit flow
-    toadd = layers.Conv2D(added, convChannels=1024, convKernel=[1, 1],
-                          convStride=[2, 2], batch_norm=True,
-                          step=step, ifTest=ifTest,
-                          activation=layers.ReLU,
-                          name='P_SepConv1024Shortcut')
-    layers_list.append(toadd)
+    # entering exit flow, with one skip block and on final separable convolution
+    toadd = conv2d_bn(x, filters=1024, kernel_size=1, strides=2, activation=None)
 
-    net = layers.SepConv2D(added, convChannels=1024, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv1024a')
-    layers_list.append(net)
-    net = layers.SepConv2D(net.output, convChannels=1024, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv1024b')
-    layers_list.append(net)
-    net = layers.Pooling(net.output, pool=layers.MaxPool, size=[3, 3], stride=[2, 2], name='MaxPool1')
-    layers_list.append(net)
-    added = toadd.output + net.output
+    x = tf.keras.layers.Activation(activation=relu)(x)
+    x = sep_conv2d_bn(x, filters=1024, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=1024, kernel_size=3, activation=None)
+    x = tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same')(x)
+    x = tf.keras.layers.Add()([x, toadd])
 
     # tensor is 10x10x1024 now
-    # why activate this? both toadd and net had RELU activation
-    net = layers.Activation(added, activation=layers.ReLU, name='P_ReLU11024')
-    layers_list.append(net)
+    # activate after adding skip connection toadd with unactivated x tensor
+    x = tf.keras.layers.Activation(activation=relu)(x)
+    x = sep_conv2d_bn(x, filters=1536, kernel_size=3, activation=relu)
+    x = tf.keras.layers.GlobalAvgPool2D()(x)
 
-    net = layers.SepConv2D(net.output, convChannels=1536, convKernel=[3, 3],
-                           batch_norm=True, step=step, ifTest=ifTest,
-                           activation=layers.ReLU,
-                           name='P_SepConv1536')
-    layers_list.append(net)
-    net = layers.GlobalAvgPool(net.output, name='GlobalAvgPool')
-    layers_list.append(net)
-
-    return net
+    return images, x
 
 
 def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
