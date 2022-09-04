@@ -66,13 +66,6 @@ class AdvNet(nets.Net):
         self.generator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
         self.simulator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
 
-    def create_simulator(self, architecture, num_middle=2):
-        # define body of simulator
-        images, output = super().create_simulator(architecture, num_middle)
-        logits = tf.keras.layers.Dense(units=1000, activation=None)(output)
-
-        return tf.keras.Model(inputs=images, outputs=logits)
-
     # define inference as hard label prediction of simulator on natural images
     @staticmethod
     def inference(logits):

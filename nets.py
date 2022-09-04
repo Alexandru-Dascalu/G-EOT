@@ -49,7 +49,7 @@ class Net:
         """
 
         if architecture == "SimpleNet":
-            images, output = get_Simple_Net()
+            images, logits = get_Simple_Net()
         elif architecture == "SmallNet":
             net = SmallNet(standardized, self._step, self._ifTest, layers_list)
         elif architecture == "ConcatNet":
@@ -59,7 +59,7 @@ class Net:
         else:
             raise ValueError("Invalid simulator architecture argument!")
 
-        return images, output
+        return tf.keras.Model(inputs=images, outputs=logits)
 
     def train(self, data_generator):
         """
@@ -294,6 +294,9 @@ def get_Simple_Net():
     x = tf.keras.layers.Activation(activation=relu)(x)
     x = sep_conv2d_bn(x, filters=1536, kernel_size=3, activation=relu)
     x = tf.keras.layers.GlobalAvgPool2D()(x)
+
+    # logits layer
+    x = tf.keras.layers.Dense(units=1000, activation=None)(x)
 
     return images, x
 
