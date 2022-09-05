@@ -145,7 +145,7 @@ class AdvNet(nets.Net):
 
         # evaluate warmed up simulator on test data
         warmup_accuracy = 0.0
-        print("Evaluating warmed up simulator:")
+        print("\nEvaluating warmed up simulator:")
         for i in range(50):
             textures, uv_maps, _, _ = next(data_generator)
             warmup_accuracy += self.warm_up_evaluation(textures, uv_maps)
@@ -170,7 +170,7 @@ class AdvNet(nets.Net):
         return accuracy
 
     def simulator_training_step(self, textures, uv_maps):
-        # create rendering params and then render render image. We do not need to differentiate through the rendering
+        # create rendering params and then render image. We do not need to differentiate through the rendering
         # for the simulator, therefore this can be done outside of the gradient tape.
         print_error_params = diff_rendering.get_print_error_args()
         photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
@@ -223,7 +223,7 @@ class AdvNet(nets.Net):
 
         return main_loss + l2_penalty
 
-    # images must have pixel values between 0 and 1
+    # images must have pixel values between -1 and 1
     def simulator_loss(self, images):
         simulator_logits = self.simulator(images)
         enemy_model_labels = AdvNet.inference(self.enemy(images))

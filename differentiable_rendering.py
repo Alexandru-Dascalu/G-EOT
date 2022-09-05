@@ -5,14 +5,13 @@ from config import cfg
 
 
 def render(textures, uv_mappings, print_error_params, photo_error_params, background_colour):
-    """Use UV mapping to create batch_seize images with both the normal and adversarial texture, then pass the
-    adversarial images as input to the victim model to get logits. UV mapping is the matrix M used to transform
-    texture x into the image with rendered object, as explained in the paper.
+    """Use UV mapping to create batch_seize images with both the normal and adversarial texture. UV mapping is the
+    matrix M used to transfor texture x into the image with rendered object, as explained in the paper.
 
     Returns
     -------
-    Tensor of shape batch_size x 1000, representing the logits obtained by passing the adversarial images as
-    input to the victim model.
+    Tensor of shape batch_size x 299 x 299 x x3, representing the images rendered with the given textures and uv
+    mappings. The images have pixel values normalised to between 0 and 1.
     """
     new_images = create_images(textures, uv_mappings, print_error_params)
 
