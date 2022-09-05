@@ -13,7 +13,7 @@ import nets
 import differentiable_rendering as diff_rendering
 from generator import create_generator
 
-NoiseRange = 10.0 / 255.0
+NoiseRange = 10.0
 cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
 relu = tf.keras.activations.relu
 
@@ -103,14 +103,14 @@ class AdvNet(nets.Net):
                 textures, uv_maps, _, target_labels = next(data_generator)
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
-                # model does on adversarial images
-                noise = self.generator([textures, target_labels])
-                adversarial_textures = noise + textures
+                # model does on adversarial images.
+                adversarial_textures, _ = self.generate_adversarial_texture(textures, target_labels)
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
                 self.simulator_training_step(adversarial_textures, uv_maps)
 
-                # adds Random uniform noise to normal data
-                textures += (np.random.rand(self._hyper_params['BatchSize'], 2048, 2048, 3) - 0.5) * 2 * NoiseRange
+                # adds Random uniform noise between -NoiseRange and NoiseRange to normal texture
+                textures += self.get_uniform_texture_noise()
+                textures = tf.clip_by_value(textures, 0, 1)
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on normal images with noise
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
@@ -168,6 +168,29 @@ class AdvNet(nets.Net):
         print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
         return accuracy
 
+    def get_uniform_texture_noise(self):
+        uniform_noise = np.random.rand(self._hyper_params['BatchSize'], 2048, 2048, 3)
+        # scale noise from 0 to 1 to between -1 and 1
+        uniform_noise = (uniform_noise - 0.5) * 2.0
+        # scale noise up based on hyper param, then divide it so it can be added to an image with pixel values
+        # between 0 and 1
+        uniform_noise = (uniform_noise * NoiseRange) / 255.0
+
+        return uniform_noise
+
+    def generate_adversarial_texture(self, std_textures, target_labels):
+        # Textures must be normalised to values between 0 and 1 for the simulator.
+        adversarial_noises = self.generator([2.0 * std_textures - 1.0, target_labels])
+        # noise is currently between -NoiseRange and Noise Rage, we scale it down so it can be directly applied
+        # to textures with pixel values between 0 and 1
+        adversarial_noises = tf.divide(adversarial_noises, 255.0)
+
+        adversarial_textures = adversarial_noises + std_textures
+        # normalise adversarial texture to values between 0 and 1
+        adversarial_textures = diff_rendering.general_normalisation(adversarial_textures)
+
+        return adversarial_textures, adversarial_noises
+
     def simulator_training_step(self, textures, uv_maps):
         # create rendering params and then render image. We do not need to differentiate through the rendering
         # for the simulator, therefore this can be done outside of the gradient tape.
@@ -197,9 +220,7 @@ class AdvNet(nets.Net):
 
     # generator trains to produce perturbations that make the simulator produce the desired target label
     def generator_loss(self, textures, uv_maps, target_labels):
-        adversarial_noises = self.generator([textures, target_labels])
-        textures = textures + adversarial_noises
-        textures = diff_rendering.general_normalisation(textures)
+        textures, adversarial_noises = self.generate_adversarial_texture(textures, target_labels)
 
         print_error_params = diff_rendering.get_print_error_args()
         photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] + self.image_shape + [3])
@@ -246,8 +267,7 @@ class AdvNet(nets.Net):
         for _ in range(self._hyper_params['TestSteps']):
             textures, uv_maps, true_labels, target_labels = next(test_data_generator)
             # create adv image by adding the generated adversarial noise
-            textures += self.generator([textures, target_labels])
-            textures = diff_rendering.general_normalisation(textures)
+            textures, _ = self.generate_adversarial_texture(textures, target_labels)
 
             # use adversarial textures to render adversarial images
             print_error_params = diff_rendering.get_print_error_args()
