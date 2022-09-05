@@ -13,15 +13,15 @@ import nets
 import differentiable_rendering as diff_rendering
 from generator import create_generator
 
-NoiseRange = 10.0
+NoiseRange = 10.0 / 255.0
 cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
 relu = tf.keras.activations.relu
 
 
-hyper_params_imagenet = {'BatchSize': 6,
+hyper_params_imagenet = {'BatchSize': 1,
                          'NumSubnets': 10,
-                         'NumPredictor': 1,
-                         'NumGenerator': 1,
+                         'SimulatorSteps': 1,
+                         'GeneratorSteps': 1,
                          'NoiseDecay': 1e-5,
                          'LearningRate': 1e-3,
                          'MinLearningRate': 2 * 1e-5,
@@ -29,7 +29,7 @@ hyper_params_imagenet = {'BatchSize': 6,
                          'DecayAfter': 300,
                          'ValidateAfter': 300,
                          'TestSteps': 50,
-                         'WarmupSteps': 500,
+                         'WarmupSteps': 100,
                          'TotalSteps': 30000}
 
 
@@ -98,25 +98,27 @@ class AdvNet(nets.Net):
         # main training loop
         while globalStep < self._hyper_params['TotalSteps']:
             # train simulator for a couple of steps
-            for _ in range(self._hyper_params['NumSimulator']):
+            for _ in range(self._hyper_params['SimulatorSteps']):
                 # ground truth labels are not needed for training the simulator
                 textures, uv_maps, _, target_labels = next(data_generator)
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on adversarial images
-                adversarial_textures = self.generator(textures) + textures
+                noise = self.generator([textures, target_labels])
+                noise = tf.divide(noise, 255.0)
+                adversarial_textures = noise + textures
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
                 self.simulator_training_step(adversarial_textures, uv_maps)
 
                 # adds Random uniform noise to normal data
-                textures += (np.random.rand(self._hyper_params['BatchSize'], 32, 32, 3) - 0.5) * 2 * NoiseRange
+                textures += (np.random.rand(self._hyper_params['BatchSize'], 2048, 2048, 3) - 0.5) * 2 * NoiseRange
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on normal images with noise
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
                 self.simulator_training_step(textures, uv_maps)
 
             # train generator for a couple of steps
-            for _ in range(self._hyper_params['NumGenerator']):
+            for _ in range(self._hyper_params['GeneratorSteps']):
                 textures, uv_maps, true_labels, target_labels = next(data_generator)
                 self.generator_training_step(textures, uv_maps, target_labels)
 
@@ -194,7 +196,7 @@ class AdvNet(nets.Net):
 
     # generator trains to produce perturbations that make the simulator produce the desired target label
     def generator_loss(self, textures, uv_maps, target_labels):
-        adversarial_noises = self.generator(textures)
+        adversarial_noises = self.generator([textures, target_labels])
         adversarial_textures = textures + adversarial_noises
         adversarial_textures = diff_rendering.general_normalisation(adversarial_textures)
 
@@ -243,7 +245,7 @@ class AdvNet(nets.Net):
         for _ in range(self._hyper_params['TestSteps']):
             textures, uv_maps, true_labels, target_labels = next(test_data_generator)
             # create adv image by adding the generated adversarial noise
-            textures += self.generator(textures)
+            textures += self.generator([textures, target_labels])
             textures = diff_rendering.general_normalisation(textures)
 
             # use adversarial textures to render adversarial images
@@ -261,8 +263,8 @@ class AdvNet(nets.Net):
             main_loss = cross_entropy(logits=enemy_model_logits, labels=target_labels)
             main_loss = tf.reduce_mean(main_loss)
 
-            tfr = np.mean(target_labels.numpy() == enemy_model_labels.numpy())
-            ufr = np.mean(true_labels.numpy() != enemy_model_labels.numpy())
+            tfr = np.mean(target_labels == enemy_model_labels.numpy())
+            ufr = np.mean(true_labels != enemy_model_labels.numpy())
 
             total_loss += main_loss
             total_tfr += tfr

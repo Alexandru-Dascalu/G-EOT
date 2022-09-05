@@ -2,7 +2,7 @@ import tensorflow as tf
 from layers import conv2d_bn, depthwise_conv2d_bn, sep_conv2d_bn, deconv2d_bn
 
 relu = tf.keras.activations.relu
-
+NoiseRange = 10.0
 
 # input must be normalised textures
 def simpleNet_encoder(textures):
