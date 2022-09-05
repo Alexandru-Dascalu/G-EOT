@@ -60,7 +60,8 @@ class AdvNet(nets.Net):
         self.simulator = self.create_simulator(architecture)
 
         learning_rate_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-            self._hyper_params['LearningRate'], decay_steps=self._hyper_params['DecayAfter'],
+            initial_learning_rate=self._hyper_params['LearningRate'],
+            decay_steps=self._hyper_params['DecayAfter'],
             decay_rate=self._hyper_params['DecayRate'])
 
         self.generator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
@@ -94,9 +95,9 @@ class AdvNet(nets.Net):
         self.warm_up_simulator()
         self.evaluate(data_generator)
 
-        globalStep = 0
+        globalStep = 1
         # main training loop
-        while globalStep < self._hyper_params['TotalSteps']:
+        while globalStep <= self._hyper_params['TotalSteps']:
             # train simulator for a couple of steps
             for _ in range(self._hyper_params['SimulatorSteps']):
                 # ground truth labels are not needed for training the simulator
