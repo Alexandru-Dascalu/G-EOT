@@ -105,7 +105,6 @@ class AdvNet(nets.Net):
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on adversarial images
                 noise = self.generator([textures, target_labels])
-                noise = tf.divide(noise, 255.0)
                 adversarial_textures = noise + textures
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
                 self.simulator_training_step(adversarial_textures, uv_maps)
@@ -199,7 +198,7 @@ class AdvNet(nets.Net):
     # generator trains to produce perturbations that make the simulator produce the desired target label
     def generator_loss(self, textures, uv_maps, target_labels):
         adversarial_noises = self.generator([textures, target_labels])
-        textures = textures + tf.divide(adversarial_noises, 255.0)
+        textures = textures + adversarial_noises
         textures = diff_rendering.general_normalisation(textures)
 
         print_error_params = diff_rendering.get_print_error_args()

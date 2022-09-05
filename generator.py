@@ -74,7 +74,11 @@ def create_generator(num_experts):
 
     moe = tf.transpose(a=tf.transpose(a=subnets, perm=[1, 2, 3, 0, 4]) * weights, perm=[3, 0, 1, 2, 4])
     # why subtract 0.5 here? I think implementation is wrong here
-    noises = (tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) - 0.5) * NoiseRange * 2
+    noises = tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) * NoiseRange
+
+    # clip noise values to valid int pixel values, then normalise noise to values between 0 and 1
+    noises = tf.clip_by_value(noises, 0, 255)
+    noises = tf.divide(noises, 255.0)
     print('Shape of Noises: ', noises.shape)
 
     return tf.keras.Model(inputs=[textures, targets], outputs=noises)
