@@ -123,7 +123,7 @@ class AdvNet(nets.Net):
                 self.generator_training_step(textures, uv_maps, target_labels)
 
                 enemy_labels = AdvNet.inference(self.enemy(self.adv_images))
-                tfr = np.mean(target_labels.numpy() == enemy_labels.numpy())
+                tfr = np.mean(target_labels == enemy_labels.numpy())
                 ufr = np.mean(true_labels != enemy_labels.numpy())
                 self.generator_tfr_history.append(tfr)
                 print('; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
@@ -131,6 +131,8 @@ class AdvNet(nets.Net):
             # evaluate on test every so often
             if globalStep % self._hyper_params['ValidateAfter'] == 0:
                 self.evaluate(data_generator)
+
+            globalStep += 1
 
     def warm_up_simulator(self):
         # warm up simulator to match predictions of target model on clean images
@@ -190,20 +192,20 @@ class AdvNet(nets.Net):
 
         generator_gradients = generator_tape.gradient(gen_loss, self.generator.trainable_variables)
         # clip generator gradients
-        generator_gradients = [(tf.clip_by_value(grad, -1.0, 1.0), var) for grad, var in generator_gradients]
+        generator_gradients = [tf.clip_by_value(grad, -1.0, 1.0) for grad in generator_gradients]
 
-        self.generator_optimiser.apply_gradients(zip(generator_gradients), self.generator.trainable_variables)
+        self.generator_optimiser.apply_gradients(zip(generator_gradients, self.generator.trainable_variables))
 
     # generator trains to produce perturbations that make the simulator produce the desired target label
     def generator_loss(self, textures, uv_maps, target_labels):
         adversarial_noises = self.generator([textures, target_labels])
-        adversarial_textures = textures + adversarial_noises
-        adversarial_textures = diff_rendering.general_normalisation(adversarial_textures)
+        textures = textures + tf.divide(adversarial_noises, 255.0)
+        textures = diff_rendering.general_normalisation(textures)
 
         print_error_params = diff_rendering.get_print_error_args()
         photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] + self.image_shape + [3])
         background_colour = diff_rendering.get_background_colours()
-        self.adv_images = diff_rendering.render(adversarial_textures, uv_maps, print_error_params,
+        self.adv_images = diff_rendering.render(textures, uv_maps, print_error_params,
                                                 photo_error_params, background_colour)
 
         simulator_logits = self.simulator(self.adv_images)
