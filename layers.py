@@ -52,14 +52,15 @@ def depthwise_conv2d_bn(x, filters, kernel_size, strides=1, activation=None):
 
     x = tf.keras.layers.DepthwiseConv2D(depth_multiplier=depth_multiplier, kernel_size=kernel_size, strides=strides,
                                         padding='same', use_bias=True, activation=activation,
-                                        kernel_regularizer=l2_regulariser)(x)
+                                        depthwise_regularizer=l2_regulariser)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     return x
 
 
 def sep_conv2d_bn(x, filters, kernel_size, strides=1, activation=None):
     x = tf.keras.layers.SeparableConv2D(filters=filters, kernel_size=kernel_size, strides=strides, padding='same',
-                                        use_bias=True, activation=activation, kernel_regularizer=l2_regulariser)(x)
+                                        use_bias=True, activation=activation, depthwise_regularizer=l2_regulariser,
+                                        pointwise_regularizer=l2_regulariser)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     return x
 

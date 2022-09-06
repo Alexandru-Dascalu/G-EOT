@@ -74,7 +74,6 @@ def create_generator(num_experts):
                                     activation=tf.keras.activations.softmax)(tf.one_hot(targets, 1000))
 
     moe = tf.transpose(a=tf.transpose(a=subnets, perm=[1, 2, 3, 0, 4]) * weights, perm=[3, 0, 1, 2, 4])
-    # why subtract 0.5 here? I think implementation is wrong here
     noises = tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) * NoiseRange
     print('Shape of Noises: ', noises.shape)
 

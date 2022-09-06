@@ -240,9 +240,10 @@ class AdvNet(nets.Net):
         self.generator_l2_loss_history.append(l2_penalty.numpy())
 
         loss = main_loss + l2_penalty
+        loss += tf.add_n(self.generator.losses)
         print("; Loss: %.3f" % loss.numpy(), end='')
 
-        return main_loss + l2_penalty
+        return loss
 
     # images must have pixel values between -1 and 1
     def simulator_loss(self, images):
@@ -251,6 +252,7 @@ class AdvNet(nets.Net):
 
         loss = cross_entropy(logits=simulator_logits, labels=enemy_model_labels)
         loss = tf.reduce_mean(loss)
+        loss += tf.add_n(self.simulator.losses)
 
         self.simulator_loss_history.append(loss.numpy())
         print("; Loss: %.3f" % loss.numpy(), end='')
@@ -258,6 +260,19 @@ class AdvNet(nets.Net):
         accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
         self.simulator_accuracy_history.append(accuracy.numpy())
         print("; Accuracy: %.3f" % accuracy.numpy(), end='')
+        return loss
+
+    # useful for testing if model.losses actually has all the correct losses
+    @staticmethod
+    def add_model_regularizer_loss(model):
+        loss = 0
+        for l in model.layers:
+            if hasattr(l, 'kernel_regularizer') and l.kernel_regularizer and hasattr(l, 'kernel'):
+                loss += l.kernel_regularizer(l.kernel)
+            if hasattr(l, 'depthwise_regularizer') and l.depthwise_regularizer and hasattr(l, 'depthwise_kernel'):
+                loss += l.depthwise_regularizer(l.depthwise_kernel)
+            if hasattr(l, 'pointwise_regularizer') and l.pointwise_regularizer and hasattr(l, 'pointwise_kernel'):
+                loss += l.pointwise_regularizer(l.pointwise_kernel)
         return loss
 
     def evaluate(self, test_data_generator):
@@ -302,8 +317,9 @@ class AdvNet(nets.Net):
 
 
 if __name__ == '__main__':
-    net = AdvNet([299, 299], "SimpleNet")
-    data_generator = data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
+    with tf.device("/device:CPU:0"):
+        net = AdvNet([299, 299], "SimpleNet")
+        data_generator = data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
 
-    net.train(data_generator)
-    net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
+        net.train(data_generator)
+        net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
