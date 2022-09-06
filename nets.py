@@ -296,7 +296,8 @@ def get_Simple_Net():
     x = tf.keras.layers.GlobalAvgPool2D()(x)
 
     # logits layer
-    x = tf.keras.layers.Dense(units=1000, activation=None)(x)
+    x = tf.keras.layers.Dense(units=1000, kernel_regularizer=tf.keras.regularizers.L2(l2=1e-4 * 0.5),
+                              activation=None)(x)
 
     return images, x
 
