@@ -93,7 +93,7 @@ class AdvNet(nets.Net):
         print("\n Begin Training: \n")
 
         self.warm_up_simulator()
-        self.evaluate(data_generator)
+        # self.evaluate(data_generator)
 
         globalStep = 1
         # main training loop
@@ -104,16 +104,13 @@ class AdvNet(nets.Net):
                 textures, uv_maps, _, target_labels = next(data_generator)
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
-                # model does on adversarial images.
-                adversarial_textures, _ = self.generate_adversarial_texture(textures, target_labels)
+                # model does on normal images
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
-                self.simulator_training_step(adversarial_textures, uv_maps)
+                self.simulator_training_step(textures, uv_maps)
 
-                # adds Random uniform noise between -NoiseRange and NoiseRange to normal texture
-                textures += self.get_uniform_texture_noise()
-                textures = tf.clip_by_value(textures, 0, 1)
                 # perform one optimisation step to train simulator so it has the same predictions as the target
-                # model does on normal images with noise
+                # model does on adversarial images.
+                textures, _ = self.generate_adversarial_texture(textures, target_labels)
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
                 self.simulator_training_step(textures, uv_maps)
 
@@ -169,8 +166,8 @@ class AdvNet(nets.Net):
         print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
         return accuracy
 
-    def get_uniform_texture_noise(self):
-        uniform_noise = np.random.rand(self._hyper_params['BatchSize'], 2048, 2048, 3)
+    def get_uniform_image_noise(self):
+        uniform_noise = np.random.rand(self._hyper_params['BatchSize'], 299, 299, 3)
         # scale noise from 0 to 1 to between -1 and 1
         uniform_noise = (uniform_noise - 0.5) * 2.0
         # scale noise up based on hyper param, then divide it so it can be added to an image with pixel values
