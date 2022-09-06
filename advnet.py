@@ -17,20 +17,20 @@ NoiseRange = 10.0
 cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
 relu = tf.keras.activations.relu
 
-
-hyper_params_imagenet = {'BatchSize': 1,
-                         'NumSubnets': 10,
-                         'SimulatorSteps': 1,
-                         'GeneratorSteps': 1,
-                         'NoiseDecay': 1e-5,
-                         'LearningRate': 1e-3,
-                         'MinLearningRate': 2 * 1e-5,
-                         'DecayRate': 0.9,
-                         'DecayAfter': 300,
-                         'ValidateAfter': 300,
-                         'TestSteps': 50,
-                         'WarmupSteps': 100,
-                         'TotalSteps': 30000}
+hyper_params = {'BatchSize': 1,
+                'NumSubnets': 10,
+                'SimulatorSteps': 1,
+                'GeneratorSteps': 1,
+                'NoiseDecay': 1e-5,
+                'LearningRate': 1e-3,
+                'MinLearningRate': 2 * 1e-5,
+                'DecayRate': 0.9,
+                'L2RegularisationConstant': 1e-4 * 0.5,
+                'DecayAfter': 300,
+                'ValidateAfter': 300,
+                'TestSteps': 50,
+                'WarmupSteps': 100,
+                'TotalSteps': 30000}
 
 
 class AdvNet(nets.Net):
@@ -39,7 +39,7 @@ class AdvNet(nets.Net):
         nets.Net.__init__(self)
 
         if hyper_params is None:
-            hyper_params = hyper_params_imagenet
+            hyper_params = hyper_params
         self._hyper_params = hyper_params
         self.image_shape = image_shape
 
@@ -221,7 +221,8 @@ class AdvNet(nets.Net):
         textures, adversarial_noises = self.generate_adversarial_texture(textures, target_labels)
 
         print_error_params = diff_rendering.get_print_error_args()
-        photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] + self.image_shape + [3])
+        photo_error_params = diff_rendering.get_photo_error_args(
+            [self._hyper_params['BatchSize']] + self.image_shape + [3])
         background_colour = diff_rendering.get_background_colours()
         self.adv_images = diff_rendering.render(textures, uv_maps, print_error_params,
                                                 photo_error_params, background_colour)
@@ -316,7 +317,7 @@ class AdvNet(nets.Net):
 if __name__ == '__main__':
     with tf.device("/device:CPU:0"):
         net = AdvNet([299, 299], "SimpleNet")
-        data_generator = data.get_adversarial_data_generators(batch_size=hyper_params_imagenet['BatchSize'])
+        data_generator = data.get_adversarial_data_generators(batch_size=hyper_params['BatchSize'])
 
         net.train(data_generator)
         net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])

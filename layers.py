@@ -2,6 +2,7 @@ import functools
 import tensorflow as tf
 
 from tensorflow.python.training.moving_averages import assign_moving_average
+import advnet
 
 weight_l2_loss = 1e-4
 
@@ -35,7 +36,7 @@ def LeakyReLU(alpha=0.2):
 AvgPool = tf.nn.avg_pool2d
 MaxPool = tf.nn.max_pool2d
 
-l2_regulariser = tf.keras.regularizers.L2(l2=1e-4 * 0.5)
+l2_regulariser = tf.keras.regularizers.L2(advnet.hyper_params['L2RegularisationConstant'])
 
 
 def conv2d_bn(x, filters, kernel_size, strides=1, activation=None):
