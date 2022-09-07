@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
-# gpu = tf.config.list_physical_devices('GPU')[0]
-# tf.config.experimental.set_memory_growth(gpu, True)
-# tf.config.set_logical_device_configuration(
-#     gpu,
-#     [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
+gpu = tf.config.list_physical_devices('GPU')[0]
+tf.config.experimental.set_memory_growth(gpu, True)
+tf.config.set_logical_device_configuration(
+    gpu,
+    [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
 
 import numpy as np
 
@@ -43,11 +43,9 @@ class AdvNet(nets.Net):
         # input to generator must be textures with values normalised to -1 and 1
         self.generator = create_generator(self._hyper_params['NumSubnets'])
         self.generator.summary()
-        tf.keras.utils.plot_model(self.generator, "generator.png", show_shapes=True, show_layer_activations=True)
         # define simulator
         self.simulator = self.create_simulator(architecture)
         self.simulator.summary()
-        tf.keras.utils.plot_model(self.simulator, "simulator.png", show_shapes=True, show_layer_activations=True)
 
         learning_rate_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             initial_learning_rate=self._hyper_params['LearningRate'],
@@ -92,7 +90,7 @@ class AdvNet(nets.Net):
         print("\n Begin Training: \n")
 
         self.warm_up_simulator()
-        # self.evaluate(data_generator)
+        self.evaluate(data_generator)
 
         globalStep = 1
         # main training loop
@@ -177,7 +175,7 @@ class AdvNet(nets.Net):
         return uniform_noise
 
     def generate_adversarial_texture(self, std_textures, target_labels):
-        # Textures must be normalised to values between 0 and 1 for the simulator.
+        # Textures must have values between -1 and 1 for the generator
         adversarial_noises = self.generator([2.0 * std_textures - 1.0, target_labels])
         # noise is currently between -NoiseRange and Noise Rage, we scale it down so it can be directly applied
         # to textures with pixel values between 0 and 1
@@ -315,7 +313,7 @@ class AdvNet(nets.Net):
 
 
 if __name__ == '__main__':
-    with tf.device("/device:CPU:0"):
+    with tf.device("/GPU:0"):
         net = AdvNet([299, 299], "SimpleNet")
         data_generator = data.get_adversarial_data_generators(batch_size=config.hyper_params['BatchSize'])
 

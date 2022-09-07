@@ -2,8 +2,8 @@ import tensorflow as tf
 
 flags = tf.compat.v1.flags
 
-hyper_params = {'BatchSize': 1,
-                'NumSubnets': 10,
+hyper_params = {'BatchSize': 4,
+                'NumSubnets': 30,
                 'SimulatorSteps': 1,
                 'GeneratorSteps': 1,
                 'NoiseDecay': 1e-5,
@@ -21,7 +21,7 @@ hyper_params = {'BatchSize': 1,
 #    hyper parameters      #
 ############################
 
-flags.DEFINE_integer('batch_size', 1, 'batch size')
+flags.DEFINE_integer('batch_size', 4, 'batch size')
 flags.DEFINE_float('batch_reuse_ratio', 0, 'percentage of batch samples that are reused in the next iteration')
 flags.DEFINE_integer('iterations', 1500, 'iterations')
 flags.DEFINE_float('learning_rate', 0.001, 'initial learning rate')
