@@ -1,6 +1,7 @@
 import os
 import csv
 import random
+
 import numpy as np
 from PIL import Image
 from objloader import Obj
@@ -10,7 +11,6 @@ import uv_renderer
 from config import cfg
 
 DATA_DIR = "D:\\Informatica\\GAN-EOT\\GAN-EOT\\dataset"
-
 
 class Model3D:
     def __init__(self, folder, data_dir):
@@ -27,16 +27,17 @@ class Model3D:
     @staticmethod
     def _get_image(path):
         image_path = Model3D._get_image_path(path)
-
         texture_image = Image.open(image_path)
-        # cast pixel values to float
-        raw_image = np.array(texture_image).astype(np.float32)
-        # normalise pixel vaues to between 0 and 1
-        raw_image = raw_image / 255.0
-        texture_image.close()
 
+        # cast pixel values to float
+        raw_texture = np.array(texture_image).astype(np.float32)
+        texture_image.close()
         # some raw textures have an alfa channel too, we only want three colour channels
-        return raw_image[:, :, :3]
+        raw_texture = raw_texture[:, :, :3]
+        # normalise pixel vaues to between 0 and 1
+        raw_texture = raw_texture / 255.0
+
+        return raw_texture
 
     @staticmethod
     def _get_image_path(path):
@@ -175,14 +176,17 @@ def get_random_target_label(ground_truth_labels):
 
 def is_prediction_true(true_labels, predicted_label):
     if true_labels == "dog":
+        # dog model has all 120 dog breed and dog-like animals as true labels
         if 150 < predicted_label < 276:
             return True
+    # even if object only has one true label, it is still represented as a list with just one element
     elif type(true_labels) == list:
         if predicted_label in true_labels:
             return True
     else:
         raise ValueError("true labels list for a sample should be either \"dog\" or a list of ints.")
 
+    # if it has not returned so far, then the prediction is incorrect
     return False
 
 
