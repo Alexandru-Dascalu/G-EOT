@@ -107,7 +107,7 @@ class AdvNet(nets.Net):
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on adversarial images.
-                textures, _ = self.generate_adversarial_texture(textures, target_labels)
+                textures, _ = self.generate_adversarial_texture(textures, target_labels, is_training=False)
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
                 self.simulator_training_step(textures, uv_maps)
 
@@ -116,7 +116,7 @@ class AdvNet(nets.Net):
                 textures, uv_maps, true_labels, target_labels = next(data_generator)
                 self.generator_training_step(textures, uv_maps, target_labels)
 
-                enemy_labels = AdvNet.inference(self.enemy(self.adv_images))
+                enemy_labels = AdvNet.inference(self.enemy(self.adv_images, training=False))
                 tfr = np.mean(target_labels == enemy_labels.numpy())
                 ufr = AdvNet.get_ufr(true_labels, enemy_labels)
 
@@ -157,8 +157,8 @@ class AdvNet(nets.Net):
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours)
 
-        simulator_logits = self.simulator(images)
-        enemy_model_labels = AdvNet.inference(self.enemy(images))
+        simulator_logits = self.simulator(images, training=False)
+        enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
 
         accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
         print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
@@ -174,9 +174,9 @@ class AdvNet(nets.Net):
 
         return uniform_noise
 
-    def generate_adversarial_texture(self, std_textures, target_labels):
+    def generate_adversarial_texture(self, std_textures, target_labels, is_training):
         # Textures must have values between -1 and 1 for the generator
-        adversarial_noises = self.generator([2.0 * std_textures - 1.0, target_labels])
+        adversarial_noises = self.generator([2.0 * std_textures - 1.0, target_labels], training=is_training)
         # noise is currently between -NoiseRange and Noise Rage, we scale it down so it can be directly applied
         # to textures with pixel values between 0 and 1
         adversarial_noises = tf.divide(adversarial_noises, 255.0)
@@ -216,7 +216,7 @@ class AdvNet(nets.Net):
 
     # generator trains to produce perturbations that make the simulator produce the desired target label
     def generator_loss(self, textures, uv_maps, target_labels):
-        textures, adversarial_noises = self.generate_adversarial_texture(textures, target_labels)
+        textures, adversarial_noises = self.generate_adversarial_texture(textures, target_labels, is_training=True)
 
         print_error_params = diff_rendering.get_print_error_args()
         photo_error_params = diff_rendering.get_photo_error_args(
@@ -225,7 +225,7 @@ class AdvNet(nets.Net):
         self.adv_images = diff_rendering.render(textures, uv_maps, print_error_params,
                                                 photo_error_params, background_colour)
 
-        simulator_logits = self.simulator(self.adv_images)
+        simulator_logits = self.simulator(self.adv_images, training=False)
 
         main_loss = cross_entropy(logits=simulator_logits, labels=target_labels)
         main_loss = tf.reduce_mean(main_loss)
@@ -243,8 +243,8 @@ class AdvNet(nets.Net):
 
     # images must have pixel values between -1 and 1
     def simulator_loss(self, images):
-        simulator_logits = self.simulator(images)
-        enemy_model_labels = AdvNet.inference(self.enemy(images))
+        simulator_logits = self.simulator(images, training=True)
+        enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
 
         loss = cross_entropy(logits=simulator_logits, labels=enemy_model_labels)
         loss = tf.reduce_mean(loss)
@@ -279,7 +279,7 @@ class AdvNet(nets.Net):
         for _ in range(self._hyper_params['TestSteps']):
             textures, uv_maps, true_labels, target_labels = next(test_data_generator)
             # create adv image by adding the generated adversarial noise
-            textures, _ = self.generate_adversarial_texture(textures, target_labels)
+            textures, _ = self.generate_adversarial_texture(textures, target_labels, is_training=False)
 
             # use adversarial textures to render adversarial images
             print_error_params = diff_rendering.get_print_error_args()
@@ -290,7 +290,7 @@ class AdvNet(nets.Net):
                                            background_colours)
 
             # evaluate adversarial images on target model
-            enemy_model_logits = self.enemy(images)
+            enemy_model_logits = self.enemy(images, training=False)
             enemy_labels = AdvNet.inference(enemy_model_logits)
 
             main_loss = cross_entropy(logits=enemy_model_logits, labels=target_labels)
