@@ -77,4 +77,4 @@ def create_generator(num_experts):
     noises = tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) * NoiseRange
     print('Shape of Noises: ', noises.shape)
 
-    return tf.keras.Model(inputs=[textures, targets], outputs=noises)
+    return tf.keras.Model(inputs=[textures, targets], outputs=noises, name="generator")

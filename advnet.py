@@ -42,8 +42,12 @@ class AdvNet(nets.Net):
 
         # input to generator must be textures with values normalised to -1 and 1
         self.generator = create_generator(self._hyper_params['NumSubnets'])
+        self.generator.summary()
+        tf.keras.utils.plot_model(self.generator, "generator.png", show_shapes=True, show_layer_activations=True)
         # define simulator
         self.simulator = self.create_simulator(architecture)
+        self.simulator.summary()
+        tf.keras.utils.plot_model(self.simulator, "simulator.png", show_shapes=True, show_layer_activations=True)
 
         learning_rate_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             initial_learning_rate=self._hyper_params['LearningRate'],

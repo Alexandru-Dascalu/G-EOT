@@ -47,17 +47,15 @@ class Net:
         """
 
         if architecture == "SimpleNet":
-            images, logits = get_Simple_Net()
+            return get_Simple_Net()
         elif architecture == "SmallNet":
-            net = SmallNet(standardized, self._step, self._ifTest, layers_list)
+            return SmallNet(standardized, self._step, self._ifTest, layers_list)
         elif architecture == "ConcatNet":
-            net = ConcatNet(standardized, self._step, self._ifTest, layers_list)
+            return ConcatNet(standardized, self._step, self._ifTest, layers_list)
         elif architecture == "Xception":
-            net = Xception(standardized, self._step, self._ifTest, layers_list, numMiddle=num_middle)
+            return Xception(standardized, self._step, self._ifTest, layers_list, numMiddle=num_middle)
         else:
             raise ValueError("Invalid simulator architecture argument!")
-
-        return tf.keras.Model(inputs=images, outputs=logits)
 
     def train(self, data_generator):
         """
@@ -298,7 +296,7 @@ def get_Simple_Net():
     x = tf.keras.layers.Dense(units=1000, kernel_regularizer=tf.keras.regularizers.L2(l2_regularisation_constant),
                               activation=None)(x)
 
-    return images, x
+    return tf.keras.Model(inputs=images, outputs=x, name="SimpleNet simulator")
 
 
 def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
