@@ -2,6 +2,21 @@ import tensorflow as tf
 
 flags = tf.compat.v1.flags
 
+hyper_params = {'BatchSize': 1,
+                'NumSubnets': 10,
+                'SimulatorSteps': 1,
+                'GeneratorSteps': 1,
+                'NoiseDecay': 1e-5,
+                'LearningRate': 1e-3,
+                'MinLearningRate': 2 * 1e-5,
+                'DecayRate': 0.9,
+                'L2RegularisationConstant': 1e-4 * 0.5,
+                'DecayAfter': 300,
+                'ValidateAfter': 300,
+                'TestSteps': 50,
+                'WarmupSteps': 100,
+                'TotalSteps': 30000}
+
 ############################
 #    hyper parameters      #
 ############################
@@ -10,8 +25,6 @@ flags.DEFINE_integer('batch_size', 1, 'batch size')
 flags.DEFINE_float('batch_reuse_ratio', 0, 'percentage of batch samples that are reused in the next iteration')
 flags.DEFINE_integer('iterations', 1500, 'iterations')
 flags.DEFINE_float('learning_rate', 0.001, 'initial learning rate')
-flags.DEFINE_float('min_learning_rate', 3 * 1e-5, 'learning rate')
-flags.DEFINE_float('decay_rate', 0.96, 'learning rate')
 flags.DEFINE_float('l2_weight', 0.025, 'the weighting factor for l2 loss')
 # 463 - broom
 flags.DEFINE_integer('target', 463, 'the label for adversarial examples')

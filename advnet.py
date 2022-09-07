@@ -12,25 +12,11 @@ import data
 import nets
 import differentiable_rendering as diff_rendering
 from generator import create_generator
+import config
 
 NoiseRange = 10.0
 cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
 relu = tf.keras.activations.relu
-
-hyper_params = {'BatchSize': 1,
-                'NumSubnets': 10,
-                'SimulatorSteps': 1,
-                'GeneratorSteps': 1,
-                'NoiseDecay': 1e-5,
-                'LearningRate': 1e-3,
-                'MinLearningRate': 2 * 1e-5,
-                'DecayRate': 0.9,
-                'L2RegularisationConstant': 1e-4 * 0.5,
-                'DecayAfter': 300,
-                'ValidateAfter': 300,
-                'TestSteps': 50,
-                'WarmupSteps': 100,
-                'TotalSteps': 30000}
 
 
 class AdvNet(nets.Net):
@@ -39,7 +25,7 @@ class AdvNet(nets.Net):
         nets.Net.__init__(self)
 
         if hyper_params is None:
-            hyper_params = hyper_params
+            hyper_params = config.hyper_params
         self._hyper_params = hyper_params
         self.image_shape = image_shape
 
@@ -89,6 +75,15 @@ class AdvNet(nets.Net):
     def accuracy(predictions, labels):
         return tf.reduce_mean(input_tensor=tf.cast(tf.equal(predictions, labels), dtype=tf.float32))
 
+    @staticmethod
+    def get_ufr(true_labels, predictions):
+        are_predictions_correct = [data.is_prediction_true(ground_truth, prediction) for ground_truth, prediction in
+                                   zip(true_labels, predictions)]
+        # negate accuracy of each prediction, because we want to measure ufr, not accuracy
+        ufr = np.mean([not correct for correct in are_predictions_correct])
+
+        return ufr
+
     def train(self, data_generator):
         print("\n Begin Training: \n")
 
@@ -121,9 +116,10 @@ class AdvNet(nets.Net):
 
                 enemy_labels = AdvNet.inference(self.enemy(self.adv_images))
                 tfr = np.mean(target_labels == enemy_labels.numpy())
-                ufr = np.mean(true_labels != enemy_labels.numpy())
+                ufr = AdvNet.get_ufr(true_labels, enemy_labels)
+
                 self.generator_tfr_history.append(tfr)
-                print('; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
+                print('\rGenerator => Step %.3f' % globalStep, '; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
 
             # evaluate on test every so often
             if globalStep % self._hyper_params['ValidateAfter'] == 0:
@@ -293,13 +289,13 @@ class AdvNet(nets.Net):
 
             # evaluate adversarial images on target model
             enemy_model_logits = self.enemy(images)
-            enemy_model_labels = AdvNet.inference(enemy_model_logits)
+            enemy_labels = AdvNet.inference(enemy_model_logits)
 
             main_loss = cross_entropy(logits=enemy_model_logits, labels=target_labels)
             main_loss = tf.reduce_mean(main_loss)
 
-            tfr = np.mean(target_labels == enemy_model_labels.numpy())
-            ufr = np.mean(true_labels != enemy_model_labels.numpy())
+            tfr = np.mean(target_labels == enemy_labels.numpy())
+            ufr = AdvNet.get_ufr(true_labels, enemy_labels)
 
             total_loss += main_loss
             total_tfr += tfr
@@ -317,7 +313,7 @@ class AdvNet(nets.Net):
 if __name__ == '__main__':
     with tf.device("/device:CPU:0"):
         net = AdvNet([299, 299], "SimpleNet")
-        data_generator = data.get_adversarial_data_generators(batch_size=hyper_params['BatchSize'])
+        data_generator = data.get_adversarial_data_generators(batch_size=config.hyper_params['BatchSize'])
 
         net.train(data_generator)
         net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])

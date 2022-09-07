@@ -173,6 +173,18 @@ def get_random_target_label(ground_truth_labels):
         elif target_label not in label_set:
             return target_label
 
+def is_prediction_true(true_labels, predicted_label):
+    if true_labels == "dog":
+        if 150 < predicted_label < 276:
+            return True
+    elif type(true_labels) == list:
+        if predicted_label in true_labels:
+            return True
+    else:
+        raise ValueError("true labels list for a sample should be either \"dog\" or a list of ints.")
+
+    return False
+
 
 if __name__ == '__main__':
     load_dataset(DATA_DIR)

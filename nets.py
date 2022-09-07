@@ -3,8 +3,7 @@ from layers import conv2d_bn, sep_conv2d_bn, depthwise_conv2d_bn
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-import advnet
-
+import config
 
 relu = tf.keras.activations.relu
 
@@ -295,7 +294,7 @@ def get_Simple_Net():
     x = tf.keras.layers.GlobalAvgPool2D()(x)
 
     # logits layer
-    l2_regularisation_constant = advnet.hyper_params['L2RegularisationConstant']
+    l2_regularisation_constant = config.hyper_params['L2RegularisationConstant']
     x = tf.keras.layers.Dense(units=1000, kernel_regularizer=tf.keras.regularizers.L2(l2_regularisation_constant),
                               activation=None)(x)
 
