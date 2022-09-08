@@ -114,10 +114,10 @@ class AdvNet(nets.Net):
             # train generator for a couple of steps
             for _ in range(self._hyper_params['GeneratorSteps']):
                 textures, uv_maps, true_labels, target_labels = next(data_generator)
-                print('\rGenerator => Step {}'.format(globalStep), end='')
+                print('\rGenerator => Step: {}'.format(globalStep), end='')
                 self.generator_training_step(textures, uv_maps, target_labels)
 
-                enemy_labels = AdvNet.inference(self.enemy(self.adv_images, training=False))
+                enemy_labels = AdvNet.inference(self.enemy(2 * self.adv_images - 1, training=False))
                 tfr = np.mean(target_labels == enemy_labels.numpy())
                 ufr = AdvNet.get_ufr(true_labels, enemy_labels)
 
