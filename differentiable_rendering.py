@@ -35,8 +35,6 @@ def render(textures, uv_mappings, print_error_params, photo_error_params, backgr
         # plt.imshow(new_images.numpy()[5])
 
     new_images = general_normalisation(new_images)
-    # images must be scaled to values between -1 and 1, as that is what models expect as input
-    new_images = 2.0 * new_images - 1.0
     # plt.imshow(new_images.numpy()[0])
     # plt.imshow(new_images.numpy()[1])
     # plt.imshow(new_images.numpy()[2])

@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import tensorflow_io as tfio
 gpu = tf.config.list_physical_devices('GPU')[0]
 tf.config.experimental.set_memory_growth(gpu, True)
 tf.config.set_logical_device_configuration(
@@ -89,8 +90,8 @@ class AdvNet(nets.Net):
     def train(self, data_generator):
         print("\n Begin Training: \n")
 
-        self.warm_up_simulator()
-        self.evaluate(data_generator)
+        # self.warm_up_simulator()
+        # self.evaluate(data_generator)
 
         globalStep = 1
         # main training loop
@@ -107,13 +108,14 @@ class AdvNet(nets.Net):
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on adversarial images.
-                textures, _ = self.generate_adversarial_texture(textures, target_labels, is_training=False)
+                textures = self.generate_adversarial_texture(textures, target_labels, is_training=False)
                 print('\rSimulator => Step: {}'.format(globalStep), end='')
                 self.simulator_training_step(textures, uv_maps)
 
             # train generator for a couple of steps
             for _ in range(self._hyper_params['GeneratorSteps']):
                 textures, uv_maps, true_labels, target_labels = next(data_generator)
+                print('\rGenerator => Step {}'.format(globalStep), end='')
                 self.generator_training_step(textures, uv_maps, target_labels)
 
                 enemy_labels = AdvNet.inference(self.enemy(self.adv_images, training=False))
@@ -121,7 +123,7 @@ class AdvNet(nets.Net):
                 ufr = AdvNet.get_ufr(true_labels, enemy_labels)
 
                 self.generator_tfr_history.append(tfr)
-                print('\rGenerator => Step %.3f' % globalStep, '; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
+                print('; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
 
             # evaluate on test every so often
             if globalStep % self._hyper_params['ValidateAfter'] == 0:
@@ -156,6 +158,8 @@ class AdvNet(nets.Net):
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours)
+        # scale images to -1 to 1, as the simulator and victim model expect
+        images = 2 * images - 1
 
         simulator_logits = self.simulator(images, training=False)
         enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
@@ -185,7 +189,7 @@ class AdvNet(nets.Net):
         # normalise adversarial texture to values between 0 and 1
         adversarial_textures = diff_rendering.general_normalisation(adversarial_textures)
 
-        return adversarial_textures, adversarial_noises
+        return adversarial_textures
 
     def simulator_training_step(self, textures, uv_maps):
         # create rendering params and then render image. We do not need to differentiate through the rendering
@@ -197,6 +201,8 @@ class AdvNet(nets.Net):
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours)
+        # scale images to -1 to 1, as the simulator and victim model expect
+        images = 2 * images - 1
 
         with tf.GradientTape() as simulator_tape:
             sim_loss = self.simulator_loss(images)
@@ -216,21 +222,33 @@ class AdvNet(nets.Net):
 
     # generator trains to produce perturbations that make the simulator produce the desired target label
     def generator_loss(self, textures, uv_maps, target_labels):
-        textures, adversarial_noises = self.generate_adversarial_texture(textures, target_labels, is_training=True)
+        adv_textures = self.generate_adversarial_texture(textures, target_labels, is_training=True)
 
+        # generate rendering params common to both the standard and adversarial images
         print_error_params = diff_rendering.get_print_error_args()
         photo_error_params = diff_rendering.get_photo_error_args(
             [self._hyper_params['BatchSize']] + self.image_shape + [3])
         background_colour = diff_rendering.get_background_colours()
-        self.adv_images = diff_rendering.render(textures, uv_maps, print_error_params,
-                                                photo_error_params, background_colour)
 
-        simulator_logits = self.simulator(self.adv_images, training=False)
+        # render standard and adversarial images. They will have the same pose and params, just the texture will be
+        # different
+        std_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+                                           background_colour)
+        self.adv_images = diff_rendering.render(adv_textures, uv_maps, print_error_params, photo_error_params,
+                                                background_colour)
 
+        # calculate main term of loss, to see if generator fools the simulator
+        simulator_logits = self.simulator(2 * self.adv_images - 1, training=False)
         main_loss = cross_entropy(logits=simulator_logits, labels=target_labels)
         main_loss = tf.reduce_mean(main_loss)
 
-        l2_penalty = self._hyper_params['NoiseDecay'] * tf.reduce_mean(input_tensor=tf.norm(tensor=adversarial_noises))
+        # convert images to lab space, to be used in the penalty loss term
+        std_images = AdvNet.get_normalised_lab_image(std_images)
+        self.adv_images = AdvNet.get_normalised_lab_image(self.adv_images)
+
+        # calculate l2 norm of difference between LAB standard and adversarial images
+        l2_penalty = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(std_images, self.adv_images)), axis=[1, 2, 3]))
+        l2_penalty = self._hyper_params['NoiseDecay'] * tf.reduce_mean(l2_penalty)
 
         self.generator_loss_history.append(main_loss.numpy())
         self.generator_l2_loss_history.append(l2_penalty.numpy())
@@ -271,6 +289,37 @@ class AdvNet(nets.Net):
                 loss += l.pointwise_regularizer(l.pointwise_kernel)
         return loss
 
+    @staticmethod
+    def get_normalised_lab_image(rgb_images):
+        """Turn a tensor representing a batch of normalised RGB images into equivalent normalised images in the LAB
+        colour space.
+
+        Parameters
+        ----------
+        rgb_images : 4D numpy array of size batch_size x 299 x 299 x 3
+            The image which we want to convert to LAB space. Each value in it must be between 0 and 1.
+        Returns
+        -------
+            A 4-D numpy array with shape [batch_size, 299, 299, 3] and with values between 0 and 1.
+        """
+        assert rgb_images.shape[1] == 299
+        assert rgb_images.shape[2] == 299
+        assert rgb_images.shape[3] == 3
+
+        lab_images = tfio.experimental.color.rgb_to_lab(rgb_images)
+        # separate the three colour channels
+        lab_images = tf.unstack(lab_images, axis=-1)
+        l, a, b = lab_images[0], lab_images[1], lab_images[2]
+
+        # normalise the lightness channel, which has values between 0 and 100
+        l = l / 100.0
+        # normalise the greeness-redness and blueness-yellowness channels, which normally are between -128 and 127
+        a = (a + 128) / 255.0
+        b = (b + 128) / 255.0
+
+        lab_images = tf.stack([l, a, b], axis=-1)
+        return lab_images
+
     def evaluate(self, test_data_generator):
         total_loss = 0.0
         total_tfr = 0.0
@@ -279,7 +328,7 @@ class AdvNet(nets.Net):
         for _ in range(self._hyper_params['TestSteps']):
             textures, uv_maps, true_labels, target_labels = next(test_data_generator)
             # create adv image by adding the generated adversarial noise
-            textures, _ = self.generate_adversarial_texture(textures, target_labels, is_training=False)
+            textures = self.generate_adversarial_texture(textures, target_labels, is_training=False)
 
             # use adversarial textures to render adversarial images
             print_error_params = diff_rendering.get_print_error_args()
@@ -288,6 +337,8 @@ class AdvNet(nets.Net):
             background_colours = diff_rendering.get_background_colours()
             images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                            background_colours)
+            # scale images to -1 to 1, as the simulator and victim model expect
+            images = 2 * images - 1
 
             # evaluate adversarial images on target model
             enemy_model_logits = self.enemy(images, training=False)
@@ -313,7 +364,7 @@ class AdvNet(nets.Net):
 
 
 if __name__ == '__main__':
-    with tf.device("/GPU:0"):
+    with tf.device("/device:CPU:0"):
         net = AdvNet([299, 299], "SimpleNet")
         data_generator = data.get_adversarial_data_generators(batch_size=config.hyper_params['BatchSize'])
 
