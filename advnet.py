@@ -151,13 +151,12 @@ class AdvNet(nets.Net):
         print('\nAverage Warmup Accuracy: ', warmup_accuracy)
 
     def warm_up_evaluation(self, textures, uv_maps):
-        print_error_params = diff_rendering.get_print_error_args()
-        photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
-                                                                 self.image_shape + [3])
-        background_colours = diff_rendering.get_background_colours()
+        print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
+        photo_error_params = diff_rendering.get_photo_error_args(self._hyper_params)
+        background_colours = diff_rendering.get_background_colours(self._hyper_params)
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
-                                       background_colours)
+                                       background_colours, self._hyper_params)
         # scale images to -1 to 1, as the simulator and victim model expect
         images = 2 * images - 1
 
@@ -194,13 +193,12 @@ class AdvNet(nets.Net):
     def simulator_training_step(self, textures, uv_maps):
         # create rendering params and then render image. We do not need to differentiate through the rendering
         # for the simulator, therefore this can be done outside of the gradient tape.
-        print_error_params = diff_rendering.get_print_error_args()
-        photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
-                                                                 self.image_shape + [3])
-        background_colours = diff_rendering.get_background_colours()
+        print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
+        photo_error_params = diff_rendering.get_photo_error_args(self._hyper_params)
+        background_colours = diff_rendering.get_background_colours(self._hyper_params)
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
-                                       background_colours)
+                                       background_colours, self._hyper_params)
         # scale images to -1 to 1, as the simulator and victim model expect
         images = 2 * images - 1
 
@@ -225,17 +223,16 @@ class AdvNet(nets.Net):
         adv_textures = self.generate_adversarial_texture(textures, target_labels, is_training=True)
 
         # generate rendering params common to both the standard and adversarial images
-        print_error_params = diff_rendering.get_print_error_args()
-        photo_error_params = diff_rendering.get_photo_error_args(
-            [self._hyper_params['BatchSize']] + self.image_shape + [3])
-        background_colour = diff_rendering.get_background_colours()
+        print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
+        photo_error_params = diff_rendering.get_photo_error_args(self._hyper_params)
+        background_colour = diff_rendering.get_background_colours(self._hyper_params)
 
         # render standard and adversarial images. They will have the same pose and params, just the texture will be
         # different
         std_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
-                                           background_colour)
+                                           background_colour, self._hyper_params)
         self.adv_images = diff_rendering.render(adv_textures, uv_maps, print_error_params, photo_error_params,
-                                                background_colour)
+                                                background_colour, self._hyper_params)
 
         # calculate main term of loss, to see if generator fools the simulator
         simulator_logits = self.simulator(2 * self.adv_images - 1, training=False)
@@ -248,7 +245,7 @@ class AdvNet(nets.Net):
 
         # calculate l2 norm of difference between LAB standard and adversarial images
         l2_penalty = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(std_images, self.adv_images)), axis=[1, 2, 3]))
-        l2_penalty = self._hyper_params['NoiseDecay'] * tf.reduce_mean(l2_penalty)
+        l2_penalty = self._hyper_params['PenaltyWeight'] * tf.reduce_mean(l2_penalty)
 
         self.generator_loss_history.append(main_loss.numpy())
         self.generator_l2_loss_history.append(l2_penalty.numpy())
@@ -331,12 +328,11 @@ class AdvNet(nets.Net):
             textures = self.generate_adversarial_texture(textures, target_labels, is_training=False)
 
             # use adversarial textures to render adversarial images
-            print_error_params = diff_rendering.get_print_error_args()
-            photo_error_params = diff_rendering.get_photo_error_args([self._hyper_params['BatchSize']] +
-                                                                     self.image_shape + [3])
-            background_colours = diff_rendering.get_background_colours()
+            print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
+            photo_error_params = diff_rendering.get_photo_error_args(self._hyper_params)
+            background_colours = diff_rendering.get_background_colours(self._hyper_params)
             images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
-                                           background_colours)
+                                           background_colours, self._hyper_params)
             # scale images to -1 to 1, as the simulator and victim model expect
             images = 2 * images - 1
 

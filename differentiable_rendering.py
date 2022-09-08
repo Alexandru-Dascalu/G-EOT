@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_addons as tfa
-from config import cfg
 
 
-def render(textures, uv_mappings, print_error_params, photo_error_params, background_colour):
+def render(textures, uv_mappings, print_error_params, photo_error_params, background_colour, hyper_params):
     """Use UV mapping to create batch_seize images with both the normal and adversarial texture. UV mapping is the
     matrix M used to transfor texture x into the image with rendered object, as explained in the paper.
 
@@ -13,7 +12,7 @@ def render(textures, uv_mappings, print_error_params, photo_error_params, backgr
     Tensor of shape batch_size x 299 x 299 x x3, representing the images rendered with the given textures and uv
     mappings. The images have pixel values normalised to between 0 and 1.
     """
-    new_images = create_images(textures, uv_mappings, print_error_params)
+    new_images = create_images(textures, uv_mappings, hyper_params, print_error_params)
 
     # add background colour to rendered images.
     new_images = add_background(new_images, uv_mappings, background_colour)
@@ -25,7 +24,7 @@ def render(textures, uv_mappings, print_error_params, photo_error_params, backgr
     # plt.imshow(new_images.numpy()[5])
 
     # check if we apply random noise to simulate camera noise
-    if cfg.photo_error:
+    if hyper_params['PhotoError']:
         new_images = apply_photo_error(new_images, photo_error_params)
         # plt.imshow(new_images.numpy()[0])
         # plt.imshow(new_images.numpy()[1])
@@ -44,7 +43,7 @@ def render(textures, uv_mappings, print_error_params, photo_error_params, backgr
     return new_images
 
 
-def create_images(textures, uv_mappings, print_error_params=None):
+def create_images(textures, uv_mappings, hyper_params, print_error_params=None):
     """Create an image from the given texture using the given UV mapping.
 
     Parameters
@@ -65,7 +64,7 @@ def create_images(textures, uv_mappings, print_error_params=None):
     """
     # check if we should add print errors, so that the adversarial textures may be used for a 3D printed object
     # and still be effective
-    if cfg.print_error:
+    if hyper_params['PhotoError']:
         print_multiplier, print_addend = print_error_params
         textures = transform(textures, print_multiplier, print_addend)
 
@@ -85,8 +84,9 @@ def add_background(images, uv_mappings, background_colour):
     return set_background(images, mask, background_colour)
 
 
-def get_background_colours():
-    return tf.random.uniform([cfg.batch_size, 1, 1, 3], cfg.background_min, cfg.background_max)
+def get_background_colours(hyper_params):
+    return tf.random.uniform([hyper_params['BatchSize'], 1, 1, 3], hyper_params['MinBackgroundColour'],
+                             hyper_params['MaxBackgroundColour'])
 
 
 def set_background(x, mask, colours):
@@ -108,16 +108,16 @@ def set_background(x, mask, colours):
     return tf.cast(mask, tf.float32) * x + tf.cast(inverse_mask, tf.float32) * colours
 
 
-def get_print_error_args():
+def get_print_error_args(hyper_params):
     multiplier = tf.random.uniform(
-        [cfg.batch_size, 1, 1, 3],
-        cfg.channel_mult_min,
-        cfg.channel_mult_max
+        [hyper_params['BatchSize'], 1, 1, 3],
+        hyper_params['PrintErrorMultMin'],
+        hyper_params['PrintErrorMultMax']
     )
     addend = tf.random.uniform(
-        [cfg.batch_size, 1, 1, 3],
-        cfg.channel_add_min,
-        cfg.channel_add_max
+        [hyper_params['BatchSize'], 1, 1, 3],
+        hyper_params['PrintErrorAddMin'],
+        hyper_params['PrintErrorAddMax']
     )
 
     return multiplier, addend
@@ -131,21 +131,22 @@ def apply_photo_error(images, photo_error_params):
     return images
 
 
-def get_photo_error_args(images_shape):
+def get_photo_error_args(hyper_params):
     multiplier = tf.random.uniform(
-        [images_shape[0], 1, 1, 1],
-        cfg.light_mult_min,
-        cfg.light_mult_max
+        [hyper_params['BatchSize'], 1, 1, 1],
+        hyper_params['PhotoErrorMultMin'],
+        hyper_params['PhotoErrorMultMax']
     )
     addend = tf.random.uniform(
-        [images_shape[0], 1, 1, 1],
-        cfg.light_add_min,
-        cfg.light_add_max
+        [hyper_params['BatchSize'], 1, 1, 1],
+        hyper_params['PhotoErrorAddMin'],
+        hyper_params['PhotoErrorAddMax']
     )
 
+    images_shape = [hyper_params['BatchSize']] + hyper_params['ImageShape'] + [3]
     gaussian_noise = tf.random.truncated_normal(
         images_shape,
-        stddev=tf.random.uniform([1], maxval=cfg.stddev)
+        stddev=tf.random.uniform([1], maxval=hyper_params['GaussianNoiseStdDev'])
     )
 
     return multiplier, addend, gaussian_noise

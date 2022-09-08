@@ -8,7 +8,7 @@ from objloader import Obj
 
 import preproc
 import uv_renderer
-from config import cfg
+from config import hyper_params
 
 DATA_DIR = "D:\\Informatica\\GAN-EOT\\GAN-EOT\\dataset"
 
@@ -126,9 +126,9 @@ def get_adversarial_data_generators(batch_size):
     models = load_dataset(DATA_DIR)
     renderer = uv_renderer.UVRenderer(None)
     renderer.set_parameters(
-        camera_distance=(cfg.camera_distance_min, cfg.camera_distance_max),
-        x_translation=(cfg.x_translation_min, cfg.x_translation_max),
-        y_translation=(cfg.y_translation_min, cfg.y_translation_max)
+        camera_distance=(hyper_params['MinCameraDistance'], hyper_params['MaxCameraDistance']),
+        x_translation=(hyper_params['MinTranslationX'], hyper_params['MaxTranslationX']),
+        y_translation=(hyper_params['MinTranslationY'], hyper_params['MaxTranslationY'])
     )
 
     def generate_adversarial_batch():

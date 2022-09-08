@@ -292,7 +292,7 @@ def get_Simple_Net():
     x = tf.keras.layers.GlobalAvgPool2D()(x)
 
     # logits layer
-    l2_regularisation_constant = config.hyper_params['L2RegularisationConstant']
+    l2_regularisation_constant = config.hyper_params['LayerRegularisationWeight']
     x = tf.keras.layers.Dense(units=1000, kernel_regularizer=tf.keras.regularizers.L2(l2_regularisation_constant),
                               activation=None)(x)
 

@@ -2,7 +2,7 @@ import tensorflow as tf
 import config
 
 
-l2_regulariser = tf.keras.regularizers.L2(config.hyper_params['L2RegularisationConstant'])
+l2_regulariser = tf.keras.regularizers.L2(config.hyper_params['LayerRegularisationWeight'])
 
 
 def conv2d_bn(x, filters, kernel_size, strides=1, activation=None):
