@@ -90,8 +90,8 @@ class AdvNet(nets.Net):
     def train(self, data_generator):
         print("\n Begin Training: \n")
 
-        # self.warm_up_simulator()
-        # self.evaluate(data_generator)
+        self.warm_up_simulator()
+        self.evaluate(data_generator)
 
         globalStep = 1
         # main training loop
