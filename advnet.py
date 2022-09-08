@@ -5,7 +5,7 @@ gpu = tf.config.list_physical_devices('GPU')[0]
 tf.config.experimental.set_memory_growth(gpu, True)
 tf.config.set_logical_device_configuration(
     gpu,
-    [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
+    [tf.config.LogicalDeviceConfiguration(memory_limit=7500)])
 
 import numpy as np
 
@@ -22,13 +22,12 @@ relu = tf.keras.activations.relu
 
 class AdvNet(nets.Net):
 
-    def __init__(self, image_shape, architecture, hyper_params=None):
+    def __init__(self, architecture, hyper_params=None):
         nets.Net.__init__(self)
 
         if hyper_params is None:
             hyper_params = config.hyper_params
         self._hyper_params = hyper_params
-        self.image_shape = image_shape
 
         self.enemy = tf.keras.applications.xception.Xception(
             include_top=True,
@@ -38,8 +37,8 @@ class AdvNet(nets.Net):
         self.enemy.trainable = False
 
         # Inputs
-        self.adv_images = tf.zeros(shape=[self._hyper_params['BatchSize']] + self.image_shape + [3], dtype=tf.float32,
-                                   name="adversarial images")
+        self.adv_images = tf.zeros(shape=[self._hyper_params['BatchSize']] + self._hyper_params['ImageShape'] + [3],
+                                   dtype=tf.float32, name="adversarial images")
 
         # input to generator must be textures with values normalised to -1 and 1
         self.generator = create_generator(self._hyper_params['NumSubnets'])
@@ -360,9 +359,8 @@ class AdvNet(nets.Net):
 
 
 if __name__ == '__main__':
-    with tf.device("/device:CPU:0"):
-        net = AdvNet([299, 299], "SimpleNet")
-        data_generator = data.get_adversarial_data_generators(batch_size=config.hyper_params['BatchSize'])
+    net = AdvNet("SimpleNet")
+    data_generator = data.get_adversarial_data_generators(batch_size=config.hyper_params['BatchSize'])
 
-        net.train(data_generator)
-        net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
+    net.train(data_generator)
+    net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
