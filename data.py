@@ -10,7 +10,7 @@ import preproc
 import uv_renderer
 from config import hyper_params
 
-DATA_DIR = "D:\\Informatica\\GAN-EOT\\GAN-EOT\\dataset"
+DATA_DIR = "./dataset"
 
 class Model3D:
     def __init__(self, folder, data_dir):
