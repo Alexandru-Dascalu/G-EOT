@@ -146,7 +146,7 @@ def get_adversarial_data_generators(batch_size):
                 batch_labels.append(labels)
 
                 renderer.set_obj(obj)
-                batch_uv_maps.append(renderer.render(i, save_render=True))
+                batch_uv_maps.append(renderer.render(i))
 
                 batch_target_labels.append(get_random_target_label(labels))
 
