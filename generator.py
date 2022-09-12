@@ -73,7 +73,7 @@ def create_generator(num_experts):
     moe = tf.transpose(a= subnets * weights, perm=[3, 0, 1, 2, 4])
 
     noises = tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) * NoiseRange
-    noises = tf.keras.layers.UpSampling2D(size=8, interpolation="bicubic")(noises)
+    noises = tf.keras.layers.UpSampling2D(size=8, interpolation="bilinear")(noises)
     print('Shape of Noises: ', noises.shape)
 
     return tf.keras.Model(inputs=[textures, targets], outputs=noises, name="generator")
