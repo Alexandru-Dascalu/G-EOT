@@ -135,25 +135,21 @@ def get_adversarial_data_generators(batch_size):
         generator = generate_data_label_pair(models)
 
         while True:
-            batch_textures = []
-            batch_uv_maps = []
+            batch_textures = np.zeros(shape=(batch_size, 2048, 2048, 3), dtype=np.float32)
+            batch_uv_maps = np.zeros(shape=(batch_size, 299, 299, 2), dtype=np.float32)
             batch_labels = []
             batch_target_labels = []
 
             for i in range(batch_size):
-                texture, obj, labels = next(generator)
-                batch_textures.append(texture)
+                batch_textures[i], obj, labels = next(generator)
                 batch_labels.append(labels)
 
                 renderer.set_obj(obj)
-                batch_uv_maps.append(renderer.render(i))
+                batch_uv_maps[i] = renderer.render(i)
 
                 batch_target_labels.append(get_random_target_label(labels))
 
-            batch_textures = np.stack(batch_textures)
-            batch_uv_maps = np.stack(batch_uv_maps)
             batch_target_labels = np.array(batch_target_labels)
-
             yield batch_textures, batch_uv_maps, batch_labels, batch_target_labels
 
     return generate_adversarial_batch()
