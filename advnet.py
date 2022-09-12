@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_io as tfio
-gpu = tf.config.list_physical_devices('GPU')[0]
-tf.config.experimental.set_memory_growth(gpu, True)
-tf.config.set_logical_device_configuration(
-    gpu,
-    [tf.config.LogicalDeviceConfiguration(memory_limit=7500)])
+# gpu = tf.config.list_physical_devices('GPU')[0]
+# tf.config.experimental.set_memory_growth(gpu, True)
+# tf.config.set_logical_device_configuration(
+#     gpu,
+#     [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
 
 import numpy as np
 
@@ -135,8 +135,9 @@ class AdvNet(nets.Net):
         print('Warming up. ')
         for i in range(self._hyper_params['WarmupSteps']):
             textures, uv_maps, _, _ = next(data_generator)
+            print("Generated batch")
 
-            print('\rSimulator => Step: ', i - self._hyper_params['WarmupSteps'], end='')
+            print('Simulator => Step: ', i - self._hyper_params['WarmupSteps'])
             self.simulator_training_step(textures, uv_maps)
 
         # evaluate warmed up simulator on test data
@@ -190,6 +191,7 @@ class AdvNet(nets.Net):
         return adversarial_textures
 
     def simulator_training_step(self, textures, uv_maps):
+        print("Start training step")
         # create rendering params and then render image. We do not need to differentiate through the rendering
         # for the simulator, therefore this can be done outside of the gradient tape.
         print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
@@ -198,14 +200,19 @@ class AdvNet(nets.Net):
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours, self._hyper_params)
+        print("Rendered images")
         # scale images to -1 to 1, as the simulator and victim model expect
         images = 2 * images - 1
+        print("Scaled images")
 
         with tf.GradientTape() as simulator_tape:
             sim_loss = self.simulator_loss(images)
 
+        print("Caclulating gradients")
         simulator_gradients = simulator_tape.gradient(sim_loss, self.simulator.trainable_variables)
+        print("Apply gradients")
         self.simulator_optimiser.apply_gradients(zip(simulator_gradients, self.simulator.trainable_variables))
+        print("Finished training step")
 
     def generator_training_step(self, std_textures, uv_maps, target_labels):
         with tf.GradientTape() as generator_tape:
@@ -257,19 +264,22 @@ class AdvNet(nets.Net):
 
     # images must have pixel values between -1 and 1
     def simulator_loss(self, images):
+        print("Start simulator loss")
         simulator_logits = self.simulator(images, training=True)
+        print("Start enemy inference")
         enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
 
+        "Start calculate loss"
         loss = cross_entropy(logits=simulator_logits, labels=enemy_model_labels)
         loss = tf.reduce_mean(loss)
         loss += tf.add_n(self.simulator.losses)
 
         self.simulator_loss_history.append(loss.numpy())
-        print("; Loss: %.3f" % loss.numpy(), end='')
+        print("; Loss: %.3f" % loss.numpy())
 
         accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
         self.simulator_accuracy_history.append(accuracy.numpy())
-        print("; Accuracy: %.3f" % accuracy.numpy(), end='')
+        print("; Accuracy: %.3f" % accuracy.numpy())
         return loss
 
     # useful for testing if model.losses actually has all the correct losses
@@ -359,8 +369,9 @@ class AdvNet(nets.Net):
 
 
 if __name__ == '__main__':
-    net = AdvNet("SimpleNet")
-    data_generator = data.get_adversarial_data_generators(batch_size=config.hyper_params['BatchSize'])
+    with tf.device("/device:CPU:0"):
+        net = AdvNet("SimpleNet")
+        data_generator = data.get_adversarial_data_generators(batch_size=config.hyper_params['BatchSize'])
 
-    net.train(data_generator)
-    net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
+        net.train(data_generator)
+        net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
