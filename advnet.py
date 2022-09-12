@@ -310,15 +310,14 @@ class AdvNet(nets.Net):
         lab_images = tfio.experimental.color.rgb_to_lab(rgb_images)
         # separate the three colour channels
         lab_images = tf.unstack(lab_images, axis=-1)
-        l, a, b = lab_images[0], lab_images[1], lab_images[2]
 
         # normalise the lightness channel, which has values between 0 and 100
-        l = l / 100.0
+        lab_images[0] = lab_images[0] / 100.0
         # normalise the greeness-redness and blueness-yellowness channels, which normally are between -128 and 127
-        a = (a + 128) / 255.0
-        b = (b + 128) / 255.0
+        lab_images[1] = (lab_images[1] + 128) / 255.0
+        lab_images[2] = (lab_images[2] + 128) / 255.0
 
-        lab_images = tf.stack([l, a, b], axis=-1)
+        lab_images = tf.stack(lab_images, axis=-1)
         return lab_images
 
     def evaluate(self, test_data_generator):
