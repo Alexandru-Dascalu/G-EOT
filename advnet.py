@@ -36,9 +36,9 @@ class AdvNet(nets.Net):
         )
         self.enemy.trainable = False
 
-        # Inputs
-        self.adv_images = tf.zeros(shape=[self._hyper_params['BatchSize']] + self._hyper_params['ImageShape'] + [3],
-                                   dtype=tf.float32, name="adversarial images")
+        images_size = [self._hyper_params['BatchSize']] + self._hyper_params['ImageShape'] + [3]
+        self.simulator_input_images = tf.zeros(shape=images_size, dtype=tf.float32, name="simulator images")
+        self.adv_images = tf.zeros(shape=images_size, dtype=tf.float32, name="adversarial images")
 
         # input to generator must be textures with values normalised to -1 and 1
         self.generator = create_generator(self._hyper_params['NumSubnets'])
@@ -114,7 +114,7 @@ class AdvNet(nets.Net):
             # train generator for a couple of steps
             for _ in range(self._hyper_params['GeneratorSteps']):
                 textures, uv_maps, true_labels, target_labels = next(data_generator)
-                print('\rGenerator => Step: {}'.format(globalStep), end='')
+                print('Generator => Step: {}'.format(globalStep))
                 self.generator_training_step(textures, uv_maps, target_labels)
 
                 enemy_labels = AdvNet.inference(self.enemy(2 * self.adv_images - 1, training=False))
@@ -196,17 +196,11 @@ class AdvNet(nets.Net):
         photo_error_params = diff_rendering.get_photo_error_args(self._hyper_params)
         background_colours = diff_rendering.get_background_colours(self._hyper_params)
 
-        images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+        self.simulator_input_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours, self._hyper_params)
         print("Rendered images")
 
-        with tf.GradientTape() as simulator_tape:
-            sim_loss = self.simulator_loss(images)
-
-        print("Caclulating gradients")
-        simulator_gradients = simulator_tape.gradient(sim_loss, self.simulator.trainable_variables)
-        print("Apply gradients")
-        self.simulator_optimiser.apply_gradients(zip(simulator_gradients, self.simulator.trainable_variables))
+        self.simulator_optimiser.minimize(self.simulator_loss, var_list=self.simulator.trainable_variables)
         print("Finished training step")
 
     def generator_training_step(self, std_textures, uv_maps, target_labels):
@@ -258,11 +252,11 @@ class AdvNet(nets.Net):
         return loss
 
     # images must have pixel values between 0 and 1
-    def simulator_loss(self, images):
+    def simulator_loss(self):
         print("Start simulator loss")
-        simulator_logits = self.simulator(images, training=True)
+        simulator_logits = self.simulator(self.simulator_input_images, training=True)
         print("Start enemy inference")
-        enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
+        enemy_model_labels = AdvNet.inference(self.enemy(self.simulator_input_images, training=False))
 
         "Start calculate loss"
         loss = cross_entropy(logits=simulator_logits, labels=enemy_model_labels)
