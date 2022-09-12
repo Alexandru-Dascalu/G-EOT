@@ -17,7 +17,7 @@ class Model3D:
         self.name = folder
         absolute_model_path = os.path.join(data_dir, self.name)
 
-        self.raw_texture = Model3D._get_image(absolute_model_path)
+        self.raw_texture = Model3D._get_texture(absolute_model_path)
         self.obj = Obj.open(os.path.join(absolute_model_path, "{}.obj".format(self.name)))
         self.labels = Model3D._load_labels(absolute_model_path)
 
@@ -25,11 +25,23 @@ class Model3D:
         return "{}: labels {}".format(self.name, self.labels)
 
     @staticmethod
-    def _get_image(path):
-        image_path = Model3D._get_image_path(path)
+    def _get_texture(path):
+        """Read texture from file and return it in the appropriate format.
+
+        Parameters
+        ----------
+        path : String
+            Absolute path to dataset sample folder.
+
+        Returns
+        -------
+        Numpy array
+            Numpy array representing the raw texture. Has shape width x height x 3.
+        """
+        image_path = Model3D._get_texture_path(path)
         texture_image = Image.open(image_path)
 
-        # cast pixel values to float
+        # convert image to a numpy array with float values
         raw_texture = np.array(texture_image).astype(np.float32)
         texture_image.close()
         # some raw textures have an alfa channel too, we only want three colour channels
@@ -40,7 +52,19 @@ class Model3D:
         return raw_texture
 
     @staticmethod
-    def _get_image_path(path):
+    def _get_texture_path(path):
+        """Determines if texture is a jpg or png file, and returns absolute path to texture file.
+
+        Parameters
+        ----------
+        path : String
+            Absolute path to dataset sample folder.
+
+        Returns
+        -------
+        String
+            Absolute path to texture file.
+        """
         if not os.path.isdir(path):
             raise ValueError("The given absolute path is not a directory!")
 
@@ -54,6 +78,18 @@ class Model3D:
 
     @staticmethod
     def _load_labels(path):
+        """Reads labels of a certain sample from the dataset and returns them.
+
+        Parameters
+        ----------
+        path : String
+            Absolute path to dataset sample folder.
+
+        Returns
+        -------
+        String or list
+            Returns a list of integers, or if this is the dog model, just returns "dog" as a label.
+        """
         if not os.path.isdir(path):
             raise ValueError("The given absolute path is not a directory!")
 
@@ -81,6 +117,18 @@ class Model3D:
 
 
 def get_object_folders(data_dir):
+    """Returns a list of all folders in the given folder.
+
+    Parameters
+    ----------
+    path : String
+        Absolute path to dataset sample folder.
+
+    Returns
+    -------
+    List of strings
+        Returns a list of with the name of each folder.
+    """
     if not os.path.isdir(data_dir):
         raise ValueError("The given data path is not a directory!")
 
