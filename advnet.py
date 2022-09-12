@@ -258,7 +258,6 @@ class AdvNet(nets.Net):
         print("Start enemy inference")
         enemy_model_labels = AdvNet.inference(self.enemy(self.simulator_input_images, training=False))
 
-        "Start calculate loss"
         loss = cross_entropy(logits=simulator_logits, labels=enemy_model_labels)
         loss = tf.reduce_mean(loss)
         loss += tf.add_n(self.simulator.losses)
