@@ -157,8 +157,6 @@ class AdvNet(nets.Net):
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours, self._hyper_params)
-        # scale images to -1 to 1, as the simulator and victim model expect
-        images = 2 * images - 1
 
         simulator_logits = self.simulator(images, training=False)
         enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
@@ -201,9 +199,6 @@ class AdvNet(nets.Net):
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours, self._hyper_params)
         print("Rendered images")
-        # scale images to -1 to 1, as the simulator and victim model expect
-        images = 2 * images - 1
-        print("Scaled images")
 
         with tf.GradientTape() as simulator_tape:
             sim_loss = self.simulator_loss(images)
@@ -241,7 +236,7 @@ class AdvNet(nets.Net):
                                                 background_colour, self._hyper_params)
 
         # calculate main term of loss, to see if generator fools the simulator
-        simulator_logits = self.simulator(2 * self.adv_images - 1, training=False)
+        simulator_logits = self.simulator(self.adv_images, training=False)
         main_loss = cross_entropy(logits=simulator_logits, labels=target_labels)
         main_loss = tf.reduce_mean(main_loss)
 
@@ -262,7 +257,7 @@ class AdvNet(nets.Net):
 
         return loss
 
-    # images must have pixel values between -1 and 1
+    # images must have pixel values between 0 and 1
     def simulator_loss(self, images):
         print("Start simulator loss")
         simulator_logits = self.simulator(images, training=True)
@@ -342,7 +337,7 @@ class AdvNet(nets.Net):
             background_colours = diff_rendering.get_background_colours(self._hyper_params)
             images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                            background_colours, self._hyper_params)
-            # scale images to -1 to 1, as the simulator and victim model expect
+            # scale images to -1 to 1, as the victim model expects
             images = 2 * images - 1
 
             # evaluate adversarial images on target model

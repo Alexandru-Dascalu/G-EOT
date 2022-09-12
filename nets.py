@@ -232,8 +232,10 @@ def SmallNet(standardized, step, ifTest, layer_list):
 
 def get_Simple_Net():
     # initial three layers in entry flow
-    images = tf.keras.layers.Input(shape=(299, 299, 3), dtype=tf.float32)
-    x = conv2d_bn(images, filters=24, kernel_size=3, strides=2, activation=relu)
+    input_images = tf.keras.layers.Input(shape=(299, 299, 3), dtype=tf.float32)
+    # scale images so that they have values between -1 and 1
+    x = 2.0 * input_images - 1
+    x = conv2d_bn(x, filters=24, kernel_size=3, strides=2, activation=relu)
     x = depthwise_conv2d_bn(x, filters=48, kernel_size=3, activation=relu)
     x = sep_conv2d_bn(x, filters=96, kernel_size=3, activation=relu)
 
@@ -296,7 +298,7 @@ def get_Simple_Net():
     x = tf.keras.layers.Dense(units=1000, kernel_regularizer=tf.keras.regularizers.L2(l2_regularisation_constant),
                               activation=None)(x)
 
-    return tf.keras.Model(inputs=images, outputs=x, name="SimpleNet simulator")
+    return tf.keras.Model(inputs=input_images, outputs=x, name="SimpleNet simulator")
 
 
 def ConcatNet(standardized, step, ifTest, layers_list, numMiddle=2):
