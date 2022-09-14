@@ -8,6 +8,7 @@ import tensorflow_io as tfio
 #     [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
 
 import numpy as np
+import os
 
 import data
 import nets
@@ -86,15 +87,31 @@ class AdvNet(nets.Net):
 
         return ufr
 
-    def train(self, data_generator):
+    def train(self, data_generator, path_load=None):
+        """
+        Trains network according the hyper params of the Net subclass.
+
+        Parameters
+        ----------
+        training_data_generator : generator
+            Generator which returns each step a tuple with two tensors: the first is the mini-batch of training images,
+            and the second is a list of their coresponding hard labels.
+        path_load : string
+            Path to checkpoint with weights of pre-trained model that we want to further train.
+        path_save : string
+            Path to where we want to save a checkpoint with the current weights of the model.
+        """
         print("\n Begin Training: \n")
 
-        self.warm_up_simulator()
+        if path_load is not None:
+            global_step = self.load_model(path_load)
+        else:
+            self.warm_up_simulator()
+            global_step = 1
         self.evaluate(data_generator)
 
-        globalStep = 1
         # main training loop
-        while globalStep <= self._hyper_params['TotalSteps']:
+        while global_step <= self._hyper_params['TotalSteps']:
             # train simulator for a couple of steps
             for _ in range(self._hyper_params['SimulatorSteps']):
                 # ground truth labels are not needed for training the simulator
@@ -102,19 +119,19 @@ class AdvNet(nets.Net):
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on normal images
-                print('\rSimulator => Step: {}'.format(globalStep), end='')
+                print('\rSimulator => Step: {}'.format(global_step), end='')
                 self.simulator_training_step(textures, uv_maps)
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on adversarial images.
                 textures = self.generate_adversarial_texture(textures, target_labels, is_training=False)
-                print('\rSimulator => Step: {}'.format(globalStep), end='')
+                print('\rSimulator => Step: {}'.format(global_step), end='')
                 self.simulator_training_step(textures, uv_maps)
 
             # train generator for a couple of steps
             for _ in range(self._hyper_params['GeneratorSteps']):
                 textures, uv_maps, true_labels, target_labels = next(data_generator)
-                print('Generator => Step: {}'.format(globalStep))
+                print('Generator => Step: {}'.format(global_step))
                 self.generator_training_step(textures, uv_maps, target_labels)
 
                 enemy_labels = AdvNet.inference(self.enemy(2 * self.adv_images - 1, training=False))
@@ -124,11 +141,14 @@ class AdvNet(nets.Net):
                 self.generator_tfr_history.append(tfr)
                 print('; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
 
-            # evaluate on test every so often
-            if globalStep % self._hyper_params['ValidateAfter'] == 0:
+            # evaluate every so often
+            if global_step % self._hyper_params['ValidateAfter'] == 0:
                 self.evaluate(data_generator)
 
-            globalStep += 1
+            if global_step % 1200 == 0:
+                self.save(global_step)
+
+            global_step += 1
 
     def warm_up_simulator(self):
         # warm up simulator to match predictions of target model on clean images
@@ -314,6 +334,18 @@ class AdvNet(nets.Net):
         return lab_images
 
     def evaluate(self, test_data_generator):
+        """
+        Evaluates trained (or in training) model across several minibatches from the test set. The number of batches is
+        a hyper param of the Net subclass.
+
+        Parameters
+        ----------
+        test_data_generator : generator
+            Generator which returns each step a tuple with two tensors: the first is the mini-batch of test images, and
+            the second is a list of their coresponding hard labels.
+        path : string
+            Path to checkpoint with weights of pre-trained model that we want to evaluate
+        """
         total_loss = 0.0
         total_tfr = 0.0
         total_ufr = 0.0
@@ -354,6 +386,65 @@ class AdvNet(nets.Net):
         self.test_accuracy_history.append(total_tfr)
         print('\nTest: Loss: ', total_loss, '; TFR: ', total_tfr, '; UFR: ', total_ufr)
 
+    def save(self, step):
+        self.simulator.save_weights('./simulator_checkpoint')
+        self.generator.save_weights('./generator_checkpoint')
+        np.savez('training_history', self.simulator_loss_history, self.simulator_accuracy_history,
+                 self.generator_loss_history, self.generator_tfr_history, self.generator_l2_loss_history,
+                 self.test_loss_history, self.test_accuracy_history, [step])
+
+    def load_model(self, path):
+        """
+        Restores model variables from a file at the given path.
+        Parameters
+        ----------
+        path : String
+            Path to file containing saved variables.
+        """
+        self.simulator.load_weights('./simulator_checkpoint')
+        self.generator.load_weights('./generator_checkpoint')
+        old_global_step = self.load_training_history("./AttackCIFAR10/training_history")
+
+        return old_global_step
+
+    def load_training_history(self, path):
+        assert type(path) is str
+
+        if os.path.exists(path):
+            array_dict = np.load(path)
+
+            self.simulator_loss_history = array_dict['arr_0']
+            self.simulator_accuracy_history = array_dict['arr_1']
+            self.generator_loss_history = array_dict['arr_2']
+            self.generator_l2_loss_history = array_dict['arr_3']
+            self.generator_tfr_history = array_dict['arr_4']
+            self.test_loss_history = array_dict['arr_5']
+            self.test_accuracy_history = array_dict['arr_6']
+            step = array_dict['arr_7'][0]
+            print("Training history restored.")
+
+            return step
+
+    def plot_training_history(self, model, test_after):
+        plt.plot(self.simulator_loss_history, label="Simulator")
+        plt.plot(self.generator_loss_history, label="Generator")
+        test_steps = list(range(0, len(self.simulator_loss_history) + 1, test_after))
+        plt.plot(test_steps, self.test_loss_history, label="Generator Test")
+        plt.xlabel("Steps")
+        plt.ylabel("Loss")
+        plt.title("{} loss history".format(model))
+        plt.legend()
+        plt.show()
+
+        plt.plot(self.simulator_accuracy_history, label="Simulator")
+        plt.plot(self.generator_tfr_history, label="Generator")
+        test_steps = list(range(0, len(self.simulator_accuracy_history) + 1, test_after))
+        plt.plot(test_steps, self.test_accuracy_history, label="Generator Test")
+        plt.xlabel("Steps")
+        plt.ylabel("TFR")
+        plt.title("{} TFR history".format(model))
+        plt.legend()
+        plt.show()
 
 if __name__ == '__main__':
     with tf.device("/device:CPU:0"):

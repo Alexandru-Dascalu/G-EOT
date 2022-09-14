@@ -1,5 +1,5 @@
 
-hyper_params = {'BatchSize': 6,
+hyper_params = {'BatchSize': 3,
                 'NumSubnets': 30,
                 'SimulatorSteps': 1,
                 'GeneratorSteps': 1,
@@ -15,7 +15,7 @@ hyper_params = {'BatchSize': 6,
                 # hyper params related to number of steps
                 'ValidateAfter': 300,
                 'TestSteps': 50,
-                'WarmupSteps': 1000,
+                'WarmupSteps': 600,
                 'TotalSteps': 40000,
 
                 # renderer settings for object pose

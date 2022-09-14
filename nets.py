@@ -1,8 +1,5 @@
 import tensorflow as tf
 from layers import conv2d_bn, sep_conv2d_bn, depthwise_conv2d_bn
-import numpy as np
-import os
-import matplotlib.pyplot as plt
 import config
 
 relu = tf.keras.activations.relu
@@ -56,86 +53,6 @@ class Net:
             return Xception(standardized, self._step, self._ifTest, layers_list, numMiddle=num_middle)
         else:
             raise ValueError("Invalid simulator architecture argument!")
-
-    def train(self, data_generator):
-        """
-        Trains network according the hyper params of the Net subclass.
-
-        Parameters
-        ----------
-        training_data_generator : generator
-            Generator which returns each step a tuple with two tensors: the first is the mini-batch of training images,
-            and the second is a list of their coresponding hard labels.
-        path_load : string
-            Path to checkpoint with weights of pre-trained model that we want to further train.
-        path_save : string
-            Path to where we want to save a checkpoint with the current weights of the model.
-        """
-        pass
-
-    def evaluate(self, test_data_generator):
-        """
-        Evaluates trained (or in training) model across several minibatches from the test set. The number of batches is
-        a hyper param of the Net subclass.
-
-        Parameters
-        ----------
-        test_data_generator : generator
-            Generator which returns each step a tuple with two tensors: the first is the mini-batch of test images, and
-            the second is a list of their coresponding hard labels.
-        path : string
-            Path to checkpoint with weights of pre-trained model that we want to evaluate
-        """
-        pass
-
-    def save(self, path):
-        self._saver.save(self._sess, path, global_step=self._step)
-
-    def load(self, path):
-        """
-        Restores model variables from a file at the given path.
-        Parameters
-        ----------
-        path : String
-            Path to file containing saved variables.
-        """
-        self._saver.restore(self._sess, path)
-        self.load_training_history("./AttackCIFAR10/training_history")
-
-    def load_training_history(self, path):
-        assert type(path) is str
-
-        if os.path.exists(path):
-            array_dict = np.load(path)
-
-            self.simulator_loss_history = array_dict['arr_0']
-            self.simulator_accuracy_history = array_dict['arr_1']
-            self.generator_loss_history = array_dict['arr_2']
-            self.generator_tfr_history = array_dict['arr_3']
-            self.test_loss_history = array_dict['arr_4']
-            self.test_accuracy_history = array_dict['arr_5']
-            print("Training history restored.")
-
-    def plot_training_history(self, model, test_after):
-        plt.plot(self.simulator_loss_history, label="Simulator")
-        plt.plot(self.generator_loss_history, label="Generator")
-        test_steps = list(range(0, len(self.simulator_loss_history) + 1, test_after))
-        plt.plot(test_steps, self.test_loss_history, label="Generator Test")
-        plt.xlabel("Steps")
-        plt.ylabel("Loss")
-        plt.title("{} loss history".format(model))
-        plt.legend()
-        plt.show()
-
-        plt.plot(self.simulator_accuracy_history, label="Simulator")
-        plt.plot(self.generator_tfr_history, label="Generator")
-        test_steps = list(range(0, len(self.simulator_accuracy_history) + 1, test_after))
-        plt.plot(test_steps, self.test_accuracy_history, label="Generator Test")
-        plt.xlabel("Steps")
-        plt.ylabel("TFR")
-        plt.title("{} TFR history".format(model))
-        plt.legend()
-        plt.show()
 
 
 # has two fewer layers compared to diagram in paper, misses last two conv 128 layers
