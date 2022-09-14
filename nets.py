@@ -5,54 +5,39 @@ import config
 relu = tf.keras.activations.relu
 
 
-class Net:
+def create_simulator(architecture, num_middle=2):
+    """
+    Defines the body of the NN and adds all layers to the layers list of the NN.
 
-    def __init__(self):
-        self._body = None
+    Parameters
+    ----------
+    images : Tensor
+        Tensor representing the minibatch of images that the NN works on. They must not be normalised, and have
+        values between 0 and 255.
+    architecture : str
+        String naming the architecture to use for the simulator of this model.
+    num_middle : int
+        Number used if architecture is Xception to control how deep the network is.
+    for_generator : bool
+        If this simulator is duplicate, with the same weights, to have the generator output as input. Used for the
+        generator loss.
 
-        self.generator_loss_history = []
-        self.generator_l2_loss_history = []
-        self.generator_tfr_history = []
+    Returns
+    ----------
+    outputs
+        Output of NN as a Tensor.
+    """
 
-        self.simulator_loss_history = []
-        self.simulator_accuracy_history = []
-
-        self.test_loss_history = []
-        self.test_accuracy_history = []
-
-    def create_simulator(self, architecture, num_middle=2):
-        """
-        Defines the body of the NN and adds all layers to the layers list of the NN.
-
-        Parameters
-        ----------
-        images : Tensor
-            Tensor representing the minibatch of images that the NN works on. They must not be normalised, and have
-            values between 0 and 255.
-        architecture : str
-            String naming the architecture to use for the simulator of this model.
-        num_middle : int
-            Number used if architecture is Xception to control how deep the network is.
-        for_generator : bool
-            If this simulator is duplicate, with the same weights, to have the generator output as input. Used for the
-            generator loss.
-
-        Returns
-        ----------
-        outputs
-            Output of NN as a Tensor.
-        """
-
-        if architecture == "SimpleNet":
-            return get_Simple_Net()
-        elif architecture == "SmallNet":
-            return SmallNet(standardized, self._step, self._ifTest, layers_list)
-        elif architecture == "ConcatNet":
-            return ConcatNet(standardized, self._step, self._ifTest, layers_list)
-        elif architecture == "Xception":
-            return Xception(standardized, self._step, self._ifTest, layers_list, numMiddle=num_middle)
-        else:
-            raise ValueError("Invalid simulator architecture argument!")
+    if architecture == "SimpleNet":
+        return get_Simple_Net()
+    elif architecture == "SmallNet":
+        return SmallNet(standardized, self._step, self._ifTest, layers_list)
+    elif architecture == "ConcatNet":
+        return ConcatNet(standardized, self._step, self._ifTest, layers_list)
+    elif architecture == "Xception":
+        return Xception(standardized, self._step, self._ifTest, layers_list, numMiddle=num_middle)
+    else:
+        raise ValueError("Invalid simulator architecture argument!")
 
 
 # has two fewer layers compared to diagram in paper, misses last two conv 128 layers

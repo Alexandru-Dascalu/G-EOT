@@ -13,7 +13,7 @@ import os
 import data
 import nets
 import differentiable_rendering as diff_rendering
-from generator import create_generator
+import generator
 import config
 
 NoiseRange = 10.0
@@ -21,11 +21,9 @@ cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
 relu = tf.keras.activations.relu
 
 
-class AdvNet(nets.Net):
+class AdvNet():
 
     def __init__(self, architecture, hyper_params=None):
-        nets.Net.__init__(self)
-
         if hyper_params is None:
             hyper_params = config.hyper_params
         self._hyper_params = hyper_params
@@ -42,10 +40,10 @@ class AdvNet(nets.Net):
         self.adv_images = tf.zeros(shape=images_size, dtype=tf.float32, name="adversarial images")
 
         # input to generator must be textures with values normalised to -1 and 1
-        self.generator = create_generator(self._hyper_params['NumSubnets'])
+        self.generator = generator.create_generator(self._hyper_params['NumSubnets'])
         self.generator.summary()
         # define simulator
-        self.simulator = self.create_simulator(architecture)
+        self.simulator = nets.create_simulator(architecture)
         self.simulator.summary()
 
         learning_rate_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
@@ -55,6 +53,17 @@ class AdvNet(nets.Net):
 
         self.generator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
         self.simulator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
+
+        # lists to save training history to
+        self.generator_loss_history = []
+        self.generator_l2_loss_history = []
+        self.generator_tfr_history = []
+
+        self.simulator_loss_history = []
+        self.simulator_accuracy_history = []
+
+        self.test_loss_history = []
+        self.test_accuracy_history = []
 
     # define inference as hard label prediction of simulator on natural images
     @staticmethod
