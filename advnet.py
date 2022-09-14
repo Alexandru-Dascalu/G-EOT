@@ -96,24 +96,22 @@ class AdvNet():
 
         return ufr
 
-    def train(self, data_generator, path_load=None):
+    def train(self, data_generator, load_checkpoint=False):
         """
         Trains network according the hyper params of the Net subclass.
 
         Parameters
         ----------
-        training_data_generator : generator
+        data_generator : generator
             Generator which returns each step a tuple with two tensors: the first is the mini-batch of training images,
             and the second is a list of their coresponding hard labels.
-        path_load : string
-            Path to checkpoint with weights of pre-trained model that we want to further train.
-        path_save : string
-            Path to where we want to save a checkpoint with the current weights of the model.
+        load_checkpoint : bool
+            Wether to restore simulator and generator weights from checkpoints. False by default.
         """
         print("\n Begin Training: \n")
 
-        if path_load is not None:
-            global_step = self.load_model(path_load)
+        if load_checkpoint:
+            global_step = self.load_model()
         else:
             self.warm_up_simulator()
             global_step = 1
@@ -130,6 +128,11 @@ class AdvNet():
                 # model does on normal images
                 print('\rSimulator => Step: {}'.format(global_step), end='')
                 self.simulator_training_step(textures, uv_maps)
+
+                # we want simulator and generator training history to have the same number of elements, so we only keep
+                # the loss and accuracy when training the simulator on adversarial images
+                self.simulator_loss_history.pop()
+                self.simulator_accuracy_history.pop()
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on adversarial images.
@@ -153,8 +156,6 @@ class AdvNet():
             # evaluate every so often
             if global_step % self._hyper_params['ValidateAfter'] == 0:
                 self.evaluate(data_generator)
-
-            if global_step % 1200 == 0:
                 self.save(global_step)
 
             global_step += 1
@@ -178,6 +179,10 @@ class AdvNet():
 
         warmup_accuracy = warmup_accuracy / 50
         print('\nAverage Warmup Accuracy: ', warmup_accuracy)
+
+        # we do not want to plot the training history of the simulator during warmup, so we discard what it recorded
+        self.simulator_loss_history = []
+        self.simulator_accuracy_history = []
 
     def warm_up_evaluation(self, textures, uv_maps):
         print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
@@ -383,7 +388,7 @@ class AdvNet():
             tfr = np.mean(target_labels == enemy_labels.numpy())
             ufr = AdvNet.get_ufr(true_labels, enemy_labels)
 
-            total_loss += main_loss
+            total_loss += main_loss.numpy()
             total_tfr += tfr
             total_ufr += ufr
 
@@ -396,13 +401,13 @@ class AdvNet():
         print('\nTest: Loss: ', total_loss, '; TFR: ', total_tfr, '; UFR: ', total_ufr)
 
     def save(self, step):
-        self.simulator.save_weights('./simulator_checkpoint')
-        self.generator.save_weights('./generator_checkpoint')
+        self.simulator.save_weights('./simulator/simulator_checkpoint')
+        self.generator.save_weights('./generator/generator_checkpoint')
         np.savez('training_history', self.simulator_loss_history, self.simulator_accuracy_history,
                  self.generator_loss_history, self.generator_tfr_history, self.generator_l2_loss_history,
                  self.test_loss_history, self.test_accuracy_history, [step])
 
-    def load_model(self, path):
+    def load_model(self):
         """
         Restores model variables from a file at the given path.
         Parameters
@@ -410,9 +415,9 @@ class AdvNet():
         path : String
             Path to file containing saved variables.
         """
-        self.simulator.load_weights('./simulator_checkpoint')
-        self.generator.load_weights('./generator_checkpoint')
-        old_global_step = self.load_training_history("./AttackCIFAR10/training_history")
+        self.simulator.load_weights('./simulator/simulator_checkpoint')
+        self.generator.load_weights('./generator/generator_checkpoint')
+        old_global_step = self.load_training_history("./training_history.npz")
 
         return old_global_step
 
@@ -422,13 +427,13 @@ class AdvNet():
         if os.path.exists(path):
             array_dict = np.load(path)
 
-            self.simulator_loss_history = array_dict['arr_0']
-            self.simulator_accuracy_history = array_dict['arr_1']
-            self.generator_loss_history = array_dict['arr_2']
-            self.generator_l2_loss_history = array_dict['arr_3']
-            self.generator_tfr_history = array_dict['arr_4']
-            self.test_loss_history = array_dict['arr_5']
-            self.test_accuracy_history = array_dict['arr_6']
+            self.simulator_loss_history = array_dict['arr_0'].tolist()
+            self.simulator_accuracy_history = array_dict['arr_1'].tolist()
+            self.generator_loss_history = array_dict['arr_2'].tolist()
+            self.generator_l2_loss_history = array_dict['arr_3'].tolist()
+            self.generator_tfr_history = array_dict['arr_4'].tolist()
+            self.test_loss_history = array_dict['arr_5'].tolist()
+            self.test_accuracy_history = array_dict['arr_6'].tolist()
             step = array_dict['arr_7'][0]
             print("Training history restored.")
 

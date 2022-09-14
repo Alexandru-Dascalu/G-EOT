@@ -6,7 +6,7 @@ hyper_params = {'BatchSize': 3,
                 'ImageShape': [299, 299],
 
                 # constants related to learning rate and loss
-                'PenaltyWeight': 1e-5,
+                'PenaltyWeight': 0.025,
                 'LearningRate': 1e-3,
                 'DecayRate': 0.9,
                 'DecayAfter': 300,
