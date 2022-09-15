@@ -6,7 +6,7 @@ import numpy as np
 
 class UVRenderer:
 
-    def __init__(self, obj_3d, viewport=(299, 299)):
+    def __init__(self, viewport=(299, 299)):
         """
         Construct a Renderer object used to compute the UV mapping for a certain 3D model, in a certain pose with a
         random rotation, translation, camera distance, background, photo error and texture printing error. These random
@@ -14,13 +14,10 @@ class UVRenderer:
 
         Parameters
         ----------
-        obj_3d : objloader.Obj
-            Obj object representing the 3D model.
         viewport : tuple(int, int)
             width and height of the rendered image.
         """
         self.width, self.height = viewport
-        self.object = obj_3d
 
         # Create ModernGL context, which exposes OpenGL features. Require OpenGL 330 core profile
         self.ctx = moderngl.create_standalone_context(require=330)
@@ -101,9 +98,6 @@ class UVRenderer:
         assert 0 <= deflection <= 1
         self.deflection = deflection
 
-    def set_obj(self, new_obj):
-        self.object = new_obj
-
     @staticmethod
     def rand_rotation_matrix(deflection=1.0, randnums=None):
         """
@@ -147,7 +141,7 @@ class UVRenderer:
 
         return M
 
-    def render(self, i=0, save_render=False):
+    def render(self, obj_model, i=0, save_render=False):
         """
         Render a batch of images of the obj_3d, each time in a different random pose, and returns the UV mappings for
         each.
@@ -165,11 +159,10 @@ class UVRenderer:
         warp
             Numpy array representing the UV mapping.
         """
-        # TODO: not very efficient, consider using an element index array later
         # make vertex array from objloader.Obj object with two attributes, in_vert as vec3 and in_text as vec_2
         self.vao = self.ctx.simple_vertex_array(
             self.prog,
-            self.ctx.buffer(self.object.pack('vx vy vz tx ty')),
+            self.ctx.buffer(obj_model.pack('vx vy vz tx ty')),
             "in_vert", "in_text"
         )
 

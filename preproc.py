@@ -1,7 +1,7 @@
 import random
 
 
-def generate_index(size, shuffle=True):
+def get_index_generator(size, shuffle=True):
     perm = list(range(size))
     if shuffle:
         random.shuffle(perm)

@@ -1,5 +1,5 @@
 
-hyper_params = {'BatchSize': 3,
+hyper_params = {'BatchSize': 6,
                 'NumSubnets': 30,
                 'SimulatorSteps': 1,
                 'GeneratorSteps': 1,
