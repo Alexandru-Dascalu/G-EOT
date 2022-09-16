@@ -1,4 +1,5 @@
 import moderngl
+from objloader import Obj
 from PIL import Image
 from pyrr import Matrix44
 import numpy as np
@@ -6,7 +7,7 @@ import numpy as np
 
 class UVRenderer:
 
-    def __init__(self, viewport=(299, 299)):
+    def __init__(self, models, viewport=(299, 299)):
         """
         Construct a Renderer object used to compute the UV mapping for a certain 3D model, in a certain pose with a
         random rotation, translation, camera distance, background, photo error and texture printing error. These random
@@ -71,6 +72,17 @@ class UVRenderer:
         self.mvp = self.prog["mvp"]
         self.vao = []
 
+        self.model_vaos = []
+        self.load_vaos(models)
+
+    def load_vaos(self, models):
+        for i, model in enumerate(models):
+            obj_model = Obj.open(model.obj_path)
+            self.model_vaos.append(self.ctx.simple_vertex_array(
+                self.prog,
+                self.ctx.buffer(obj_model.pack('vx vy vz tx ty')),
+                "in_vert", "in_text"
+            ))
 
     def set_parameters(self,
                        camera_distance=(2.5, 3.0),
@@ -141,7 +153,7 @@ class UVRenderer:
 
         return M
 
-    def render(self, obj_model, i=0, save_render=False):
+    def render(self, model_index, i=0, save_render=False):
         """
         Render a batch of images of the obj_3d, each time in a different random pose, and returns the UV mappings for
         each.
@@ -160,11 +172,7 @@ class UVRenderer:
             Numpy array representing the UV mapping.
         """
         # make vertex array from objloader.Obj object with two attributes, in_vert as vec3 and in_text as vec_2
-        self.vao = self.ctx.simple_vertex_array(
-            self.prog,
-            self.ctx.buffer(obj_model.pack('vx vy vz tx ty')),
-            "in_vert", "in_text"
-        )
+        self.vao = self.model_vaos[model_index]
 
         translation_matrix = Matrix44.from_translation((
             np.random.uniform(self.x_low, self.x_high),

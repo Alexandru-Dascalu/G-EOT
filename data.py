@@ -4,7 +4,6 @@ import random
 
 import numpy as np
 from PIL import Image
-from objloader import Obj
 
 import preproc
 import uv_renderer
@@ -13,12 +12,13 @@ from config import hyper_params
 DATA_DIR = "./dataset"
 
 class Model3D:
-    def __init__(self, folder, data_dir):
+    def __init__(self, folder, data_dir, index):
         self.name = folder
+        self.index = index
         absolute_model_path = os.path.join(data_dir, self.name)
 
         self.raw_texture = Model3D._get_texture(absolute_model_path)
-        self.obj = Obj.open(os.path.join(absolute_model_path, "{}.obj".format(self.name)))
+        self.obj_path = os.path.join(absolute_model_path, "{}.obj".format(self.name))
         self.labels = Model3D._load_labels(absolute_model_path)
 
     def __str__(self):
@@ -137,7 +137,7 @@ def get_object_folders(data_dir):
 
 def load_dataset(data_dir):
     object_folders = get_object_folders(data_dir)
-    models = [Model3D(folder, data_dir) for folder in object_folders]
+    models = [Model3D(folder, data_dir, i) for i, folder in enumerate(object_folders)]
     for model in models:
         print(str(model))
 
@@ -158,7 +158,7 @@ class BatchGenerator():
         An object for creating batches of data samples to train the adversarial model on.
         """
         self.models = load_dataset(DATA_DIR)
-        self.renderer = uv_renderer.UVRenderer()
+        self.renderer = uv_renderer.UVRenderer(self.models)
         self.renderer.set_parameters(
             camera_distance=(hyper_params['MinCameraDistance'], hyper_params['MaxCameraDistance']),
             x_translation=(hyper_params['MinTranslationX'], hyper_params['MaxTranslationX']),
@@ -177,22 +177,19 @@ class BatchGenerator():
         # discard ground truth labels from the previous batch
         self.batch_labels = []
         for i in range(self.batch_size):
-            self.batch_textures[i], obj, labels = self.get_next_sample()
+            next_sample = self.get_next_sample()
 
-            self.batch_labels.append(labels)
-            self.batch_uv_maps[i] = self.renderer.render(obj, i)
-            self.batch_target_labels[i] = BatchGenerator.get_random_target_label(labels)
+            self.batch_textures[i] = next_sample.raw_texture
+            self.batch_labels.append(next_sample.labels)
+            self.batch_uv_maps[i] = self.renderer.render(next_sample.index, i)
+            self.batch_target_labels[i] = BatchGenerator.get_random_target_label(next_sample.labels)
 
         return self.batch_textures, self.batch_uv_maps, self.batch_labels, self.batch_target_labels
 
     def get_next_sample(self):
         index = next(self.index_generator)
 
-        texture = self.models[index].raw_texture
-        obj = self.models[index].obj
-        labels = self.models[index].labels
-
-        return texture, obj, labels
+        return self.models[index]
 
     @staticmethod
     def get_random_target_label(ground_truth_labels):
