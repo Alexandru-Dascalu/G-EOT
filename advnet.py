@@ -52,7 +52,7 @@ class AdvNet():
             decay_rate=self._hyper_params['DecayRate'])
 
         self.generator_optimiser = tf.keras.optimizers.Adam(self._hyper_params['LearningRate'], epsilon=1e-8)
-        self.simulator_optimiser = tf.keras.optimizers.Adam(self._hyper_params['LearningRate'], epsilon=1e-8)
+        self.simulator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
 
         # lists to save training history to
         self.generator_loss_history = []
@@ -254,8 +254,8 @@ class AdvNet():
 
         # render standard and adversarial images. They will have the same pose and params, just the texture will be
         # different
-        # std_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
-        #                                    background_colour, self._hyper_params)
+        std_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+                                           background_colour, self._hyper_params)
         self.adv_images = diff_rendering.render(adv_textures, uv_maps, print_error_params, photo_error_params,
                                                 background_colour, self._hyper_params)
 
@@ -269,7 +269,7 @@ class AdvNet():
         # self.adv_images = AdvNet.get_normalised_lab_image(self.adv_images)
 
         # calculate l2 norm of difference between LAB standard and adversarial images
-        l2_penalty = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(textures, adv_textures)), axis=[1, 2, 3]))
+        l2_penalty = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(std_images, self.adv_images)), axis=[1, 2, 3]))
         l2_penalty = self._hyper_params['PenaltyWeight'] * tf.reduce_mean(l2_penalty)
 
         self.generator_loss_history.append(main_loss.numpy())
