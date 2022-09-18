@@ -6,16 +6,16 @@ hyper_params = {'BatchSize': 6,
                 'ImageShape': [299, 299],
 
                 # constants related to learning rate and loss
-                'PenaltyWeight': 0.025,
+                'PenaltyWeight': 0.001,
                 'LearningRate': 1e-3,
-                'DecayRate': 0.9,
+                'DecayRate': 0.95,
                 'DecayAfter': 300,
                 'LayerRegularisationWeight': 1e-4 * 0.5,
 
                 # hyper params related to number of steps
                 'ValidateAfter': 300,
-                'TestSteps': 50,
-                'WarmupSteps': 600,
+                'TestSteps': 100,
+                'WarmupSteps': 2000,
                 'TotalSteps': 40000,
 
                 # renderer settings for object pose
@@ -29,12 +29,12 @@ hyper_params = {'BatchSize': 6,
                 # image post-processing settings
                 'MinBackgroundColour': 0.1,
                 'MaxBackgroundColour': 1.0,
-                'PrintError': True,
+                'PrintError': False,
                 'PrintErrorAddMin': -0.15,
                 'PrintErrorAddMax': 0.15,
                 'PrintErrorMultMin': 0.7,
                 'PrintErrorMultMax': 1.3,
-                'PhotoError': True,
+                'PhotoError': False,
                 'PhotoErrorAddMin': -0.15,
                 'PhotoErrorAddMax': 0.15,
                 'PhotoErrorMultMin': 0.5,
