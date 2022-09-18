@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_io as tfio
-# gpu = tf.config.list_physical_devices('GPU')[0]
-# tf.config.experimental.set_memory_growth(gpu, True)
-# tf.config.set_logical_device_configuration(
-#     gpu,
-#     [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
+gpu = tf.config.list_physical_devices('GPU')[0]
+tf.config.experimental.set_memory_growth(gpu, True)
+tf.config.set_logical_device_configuration(
+    gpu,
+    [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
 
 import numpy as np
 import os
@@ -51,8 +51,8 @@ class AdvNet():
             decay_steps=self._hyper_params['DecayAfter'],
             decay_rate=self._hyper_params['DecayRate'])
 
-        self.generator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
-        self.simulator_optimiser = tf.keras.optimizers.Adam(learning_rate_schedule, epsilon=1e-8)
+        self.generator_optimiser = tf.keras.optimizers.Adam(self._hyper_params['LearningRate'], epsilon=1e-8)
+        self.simulator_optimiser = tf.keras.optimizers.Adam(self._hyper_params['LearningRate'], epsilon=1e-8)
 
         # lists to save training history to
         self.generator_loss_history = []
@@ -143,7 +143,7 @@ class AdvNet():
             # train generator for a couple of steps
             for _ in range(self._hyper_params['GeneratorSteps']):
                 textures, uv_maps, true_labels, target_labels = data_generator.get_next_batch()
-                print('\rGenerator => Step: {}'.format(global_step))
+                print('\rGenerator => Step: {}'.format(global_step), end='')
                 self.generator_training_step(textures, uv_maps, target_labels)
 
                 enemy_labels = AdvNet.inference(self.enemy(2 * self.adv_images - 1, training=False))
@@ -166,7 +166,7 @@ class AdvNet():
         for i in range(self._hyper_params['WarmupSteps']):
             textures, uv_maps, _, _ = data_generator.get_next_batch()
 
-            print('Simulator => Step: ', i - self._hyper_params['WarmupSteps'])
+            print('\rSimulator => Step: ', i - self._hyper_params['WarmupSteps'], end='')
             self.simulator_training_step(textures, uv_maps)
 
         # evaluate warmed up simulator on test data
@@ -196,7 +196,7 @@ class AdvNet():
 
         accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
         print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
-        return accuracy
+        return accuracy.numpy()
 
     def get_uniform_image_noise(self):
         uniform_noise = np.random.rand(self._hyper_params['BatchSize'], 299, 299, 3)
@@ -254,8 +254,8 @@ class AdvNet():
 
         # render standard and adversarial images. They will have the same pose and params, just the texture will be
         # different
-        std_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
-                                           background_colour, self._hyper_params)
+        # std_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+        #                                    background_colour, self._hyper_params)
         self.adv_images = diff_rendering.render(adv_textures, uv_maps, print_error_params, photo_error_params,
                                                 background_colour, self._hyper_params)
 
@@ -265,11 +265,11 @@ class AdvNet():
         main_loss = tf.reduce_mean(main_loss)
 
         # convert images to lab space, to be used in the penalty loss term
-        std_images = AdvNet.get_normalised_lab_image(std_images)
-        self.adv_images = AdvNet.get_normalised_lab_image(self.adv_images)
+        # std_images = AdvNet.get_normalised_lab_image(std_images)
+        # self.adv_images = AdvNet.get_normalised_lab_image(self.adv_images)
 
         # calculate l2 norm of difference between LAB standard and adversarial images
-        l2_penalty = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(std_images, self.adv_images)), axis=[1, 2, 3]))
+        l2_penalty = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(textures, adv_textures)), axis=[1, 2, 3]))
         l2_penalty = self._hyper_params['PenaltyWeight'] * tf.reduce_mean(l2_penalty)
 
         self.generator_loss_history.append(main_loss.numpy())
