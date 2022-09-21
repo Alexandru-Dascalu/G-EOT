@@ -133,11 +133,10 @@ def SmallNet(standardized, step, ifTest, layer_list):
 
 
 def get_Simple_Net():
-    # initial three layers in entry flow
+    # input images must have values between -1 and 1
     input_images = tf.keras.layers.Input(shape=(299, 299, 3), dtype=tf.float32)
-    # scale images so that they have values between -1 and 1
-    x = 2.0 * input_images - 1
-    x = conv2d_bn(x, filters=24, kernel_size=3, strides=2, activation=relu)
+    # initial three layers in entry flow
+    x = conv2d_bn(input_images, filters=24, kernel_size=3, strides=2, activation=relu)
     x = depthwise_conv2d_bn(x, filters=48, kernel_size=3, activation=relu)
     x = sep_conv2d_bn(x, filters=96, kernel_size=3, activation=relu)
 

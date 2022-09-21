@@ -2,7 +2,6 @@ import tensorflow as tf
 from layers import conv2d_bn, depthwise_conv2d_bn, sep_conv2d_bn, deconv2d_bn
 
 relu = tf.keras.activations.relu
-NoiseRange = 10.0
 
 # input must be normalised textures
 def simpleNet_encoder(textures):
@@ -95,7 +94,7 @@ def create_generator(num_experts):
     subnets = tf.transpose(a=subnets, perm=[1, 2, 3, 0, 4])
     moe = tf.transpose(a= subnets * weights, perm=[3, 0, 1, 2, 4])
 
-    noises = tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) * NoiseRange
+    noises = (tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) - 0.5) * 2
     noises = tf.keras.layers.UpSampling2D(size=8, interpolation="bilinear")(noises)
     print('Shape of Noises: ', noises.shape)
 

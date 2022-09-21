@@ -171,7 +171,7 @@ class AdvNet():
         # evaluate warmed up simulator on test data
         warmup_accuracy = 0.0
         print("\nEvaluating warmed up simulator:")
-        for i in range(50):
+        for i in range(300):
             textures, uv_maps, _, _ = data_generator.get_next_batch()
             warmup_accuracy += self.warm_up_evaluation(textures, uv_maps)
 
@@ -189,6 +189,8 @@ class AdvNet():
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours, self._hyper_params)
+        # scale images as simulator and enemy model expect images with values between -1 and 1
+        images = 2 * images - 1
 
         simulator_logits = self.simulator(images, training=False)
         enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
@@ -207,16 +209,13 @@ class AdvNet():
 
         return uniform_noise
 
+    # input texture must have pixel values between 0 and 1
     def generate_adversarial_texture(self, std_textures, target_labels, is_training):
         # Textures must have values between -1 and 1 for the generator
         adversarial_noises = self.generator([2.0 * std_textures - 1.0, target_labels], training=is_training)
-        # noise is currently between -NoiseRange and Noise Rage, we scale it down so it can be directly applied
-        # to textures with pixel values between 0 and 1
-        adversarial_noises = tf.divide(adversarial_noises, 255.0)
 
         adversarial_textures = adversarial_noises + std_textures
-        # normalise adversarial texture to values between 0 and 1
-        adversarial_textures = diff_rendering.normalisation(adversarial_textures)
+        adversarial_textures = tf.clip_by_value(adversarial_textures, 0, 1)
 
         return adversarial_textures
 
@@ -229,6 +228,7 @@ class AdvNet():
 
         images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours, self._hyper_params)
+        images = 2 * images - 1
 
         with tf.GradientTape() as simulator_tape:
             sim_loss = self.simulator_loss(images)
@@ -247,6 +247,7 @@ class AdvNet():
         self.generator_optimiser.apply_gradients(zip(generator_gradients, self.generator.trainable_variables))
 
     # generator trains to produce perturbations that make the simulator produce the desired target label
+    # input textures must have values between 0 and 1
     def generator_loss(self, textures, uv_maps, target_labels):
         adv_textures = self.generate_adversarial_texture(textures, target_labels, is_training=True)
 
@@ -263,7 +264,7 @@ class AdvNet():
                                                 background_colour, self._hyper_params)
 
         # calculate main term of loss, to see if generator fools the simulator
-        simulator_logits = self.simulator(self.adv_images, training=False)
+        simulator_logits = self.simulator(2 * self.adv_images - 1, training=False)
         main_loss = cross_entropy(logits=simulator_logits, labels=target_labels)
         main_loss = tf.reduce_mean(main_loss)
 
@@ -284,7 +285,7 @@ class AdvNet():
 
         return loss
 
-    # images must have pixel values between 0 and 1
+    # images must have pixel values between -1 and 1
     def simulator_loss(self, images):
         simulator_logits = self.simulator(images, training=True)
         enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
