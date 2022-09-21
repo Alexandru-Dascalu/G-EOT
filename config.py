@@ -13,9 +13,9 @@ hyper_params = {'BatchSize': 6,
                 'LayerRegularisationWeight': 1e-4 * 0.5,
 
                 # hyper params related to number of steps
-                'ValidateAfter': 300,
-                'TestSteps': 100,
-                'WarmupSteps': 1000,
+                'ValidateAfter': 500,
+                'TestSteps': 200,
+                'WarmupSteps': 1500,
                 'TotalSteps': 40000,
 
                 # renderer settings for object pose
@@ -34,7 +34,7 @@ hyper_params = {'BatchSize': 6,
                 'PrintErrorAddMax': 0.15,
                 'PrintErrorMultMin': 0.7,
                 'PrintErrorMultMax': 1.3,
-                'PhotoError': False,
+                'PhotoError': True,
                 'PhotoErrorAddMin': -0.15,
                 'PhotoErrorAddMax': 0.15,
                 'PhotoErrorMultMin': 0.5,
