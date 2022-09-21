@@ -76,7 +76,7 @@ class UVRenderer:
         self.load_vaos(models)
 
     def load_vaos(self, models):
-        for i, model in enumerate(models):
+        for model in models:
             obj_model = Obj.open(model.obj_path)
             self.model_vaos.append(self.ctx.simple_vertex_array(
                 self.prog,
