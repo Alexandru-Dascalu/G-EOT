@@ -36,7 +36,6 @@ class AdvNet():
         self.enemy.trainable = False
 
         images_size = [self._hyper_params['BatchSize']] + self._hyper_params['ImageShape'] + [3]
-        self.simulator_input_images = tf.zeros(shape=images_size, dtype=tf.float32, name="simulator images")
         self.adv_images = tf.zeros(shape=images_size, dtype=tf.float32, name="adversarial images")
 
         # input to generator must be textures with values normalised to -1 and 1
@@ -228,10 +227,14 @@ class AdvNet():
         photo_error_params = diff_rendering.get_photo_error_args(self._hyper_params)
         background_colours = diff_rendering.get_background_colours(self._hyper_params)
 
-        self.simulator_input_images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
+        images = diff_rendering.render(textures, uv_maps, print_error_params, photo_error_params,
                                        background_colours, self._hyper_params)
 
-        self.simulator_optimiser.minimize(self.simulator_loss, var_list=self.simulator.trainable_variables)
+        with tf.GradientTape() as simulator_tape:
+            sim_loss = self.simulator_loss(images)
+
+        simulator_gradients = simulator_tape.gradient(sim_loss, self.simulator.trainable_variables)
+        self.simulator_optimiser.apply_gradients(zip(simulator_gradients, self.simulator.trainable_variables))
 
     def generator_training_step(self, std_textures, uv_maps, target_labels):
         with tf.GradientTape() as generator_tape:
@@ -282,9 +285,9 @@ class AdvNet():
         return loss
 
     # images must have pixel values between 0 and 1
-    def simulator_loss(self):
-        simulator_logits = self.simulator(self.simulator_input_images, training=True)
-        enemy_model_labels = AdvNet.inference(self.enemy(self.simulator_input_images, training=False))
+    def simulator_loss(self, images):
+        simulator_logits = self.simulator(images, training=True)
+        enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
 
         loss = cross_entropy(logits=simulator_logits, labels=enemy_model_labels)
         loss = tf.reduce_mean(loss)
