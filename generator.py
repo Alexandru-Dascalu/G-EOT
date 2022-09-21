@@ -8,44 +8,66 @@ NoiseRange = 10.0
 def simpleNet_encoder(textures):
     # textures are 2048x2048
     x = tf.keras.layers.AvgPool2D(pool_size=8)(textures)
-    # textures are 256x256
-    x = conv2d_bn(x, filters=12, kernel_size=3, strides=2, activation=relu)
-    # textures are 128x128
+    # textures are 256x256 now
+    x = conv2d_bn(x, filters=32, kernel_size=3, strides=2, activation=relu)
     x = depthwise_conv2d_bn(x, filters=48, kernel_size=3, activation=relu)
     x = sep_conv2d_bn(x, filters=96, kernel_size=3, activation=relu)
 
-    # first skip block
+    # tensor is 128x128x96 now
+    # three blocks with skip connections
     toadd = conv2d_bn(x, filters=192, kernel_size=1, activation=None)
     toadd = tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same')(toadd)
 
     x = sep_conv2d_bn(x, filters=192, kernel_size=3, strides=2, activation=relu)
-    # textures are 64x64 now
     x = sep_conv2d_bn(x, filters=192, kernel_size=3, activation=None)
     x = tf.keras.layers.Add()([x, toadd])
 
-    # second skip block
+    # tensor is 64x64x192 now
+    # second skip connection block
     toadd = conv2d_bn(x, filters=384, kernel_size=1, activation=None)
     toadd = tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same')(toadd)
 
-    x = tf.keras.layers.Activation(relu)(x)
+    x = tf.keras.layers.Activation(activation=relu)(x)
     x = sep_conv2d_bn(x, filters=384, kernel_size=3, strides=2, activation=relu)
-    # textures are 32x32 now
     x = sep_conv2d_bn(x, filters=384, kernel_size=3, activation=None)
     x = tf.keras.layers.Add()([x, toadd])
 
-    # third skip block
+    # tensor is 32x32x384 now
+    # third skip connection block
     toadd = conv2d_bn(x, filters=768, kernel_size=1, activation=None)
     toadd = tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same')(toadd)
 
-    x = tf.keras.layers.Activation(relu)(x)
+    x = tf.keras.layers.Activation(activation=relu)(x)
     x = sep_conv2d_bn(x, filters=768, kernel_size=3, strides=2, activation=relu)
-    # textures are 16x16 now
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=None)
+    toadd = tf.keras.layers.Add()([x, toadd])
+
+    # tensor is 16x16x768 now
+    # entering middle flow, with two skip blocks, no spatial reduction, 768 kernels
+    x = tf.keras.layers.Activation(activation=relu)(toadd)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=None)
+    toadd = tf.keras.layers.Add()([x, toadd])
+
+    x = tf.keras.layers.Activation(activation=relu)(toadd)
+    x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=relu)
     x = sep_conv2d_bn(x, filters=768, kernel_size=3, activation=None)
     x = tf.keras.layers.Add()([x, toadd])
 
-    x = tf.keras.layers.Activation(relu)(x)
+    # tensor is 16x16x768 now
+    # entering exit flow, with one skip block and on final separable convolution
+    toadd = conv2d_bn(x, filters=1024, kernel_size=1, strides=2, activation=None)
+
+    x = tf.keras.layers.Activation(activation=relu)(x)
     x = sep_conv2d_bn(x, filters=1024, kernel_size=3, activation=relu)
-    x = sep_conv2d_bn(x, filters=1024, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=1024, kernel_size=3, activation=None)
+    x = tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same')(x)
+    x = tf.keras.layers.Add()([x, toadd])
+
+    # tensor is 8x8x1024 now
+    # activate after adding skip connection toadd with unactivated x tensor
+    x = tf.keras.layers.Activation(activation=relu)(x)
+    x = sep_conv2d_bn(x, filters=1536, kernel_size=3, activation=relu)
 
     return x
 
@@ -56,11 +78,12 @@ def create_generator(num_experts):
     x = simpleNet_encoder(textures)
 
     # add decoder part
-    x = deconv2d_bn(x, filters=128, kernel_size=3, strides=2, activation=relu)
+    x = deconv2d_bn(x, filters=256, kernel_size=3, strides=2, activation=relu)
     subnets = []
     for idx in range(num_experts):
-        subnet = deconv2d_bn(x, filters=64, kernel_size=3, strides=2, activation=relu)
-        subnet = deconv2d_bn(subnet, filters=32, kernel_size=3, strides=2, activation=relu)
+        subnet = deconv2d_bn(x, filters=128, kernel_size=3, strides=2, activation=relu)
+        subnet = deconv2d_bn(subnet, filters=64, kernel_size=3, strides=2, activation=relu)
+        subnet = deconv2d_bn(subnet, filters=32, kernel_size=3, activation=relu)
         subnet = deconv2d_bn(subnet, filters=3, kernel_size=3, strides=2, activation=relu)
         subnets.append(tf.expand_dims(subnet, axis=-1))
 
