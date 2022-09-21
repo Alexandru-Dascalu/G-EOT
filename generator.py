@@ -10,7 +10,7 @@ def simpleNet_encoder(textures):
     x = tf.keras.layers.AvgPool2D(pool_size=8)(textures)
     # textures are 256x256 now
     x = conv2d_bn(x, filters=32, kernel_size=3, strides=2, activation=relu)
-    x = depthwise_conv2d_bn(x, filters=48, kernel_size=3, activation=relu)
+    x = depthwise_conv2d_bn(x, filters=64, kernel_size=3, activation=relu)
     x = sep_conv2d_bn(x, filters=96, kernel_size=3, activation=relu)
 
     # tensor is 128x128x96 now
