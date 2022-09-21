@@ -33,7 +33,7 @@ def render(textures, uv_mappings, print_error_params, photo_error_params, backgr
         # plt.imshow(new_images.numpy()[4])
         # plt.imshow(new_images.numpy()[5])
 
-    new_images = general_normalisation(new_images)
+    new_images = normalisation(new_images)
     # plt.imshow(new_images.numpy()[0])
     # plt.imshow(new_images.numpy()[1])
     # plt.imshow(new_images.numpy()[2])
@@ -164,7 +164,7 @@ def transform(x, a, b):
     return tf.add(tf.multiply(a, x), b)
 
 
-def general_normalisation(x):
+def normalisation(x):
     minimum = tf.reduce_min(input_tensor=x, axis=[1, 2, 3], keepdims=True)
     maximum = tf.reduce_max(input_tensor=x, axis=[1, 2, 3], keepdims=True)
 

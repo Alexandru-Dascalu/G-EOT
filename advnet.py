@@ -217,7 +217,7 @@ class AdvNet():
 
         adversarial_textures = adversarial_noises + std_textures
         # normalise adversarial texture to values between 0 and 1
-        adversarial_textures = diff_rendering.general_normalisation(adversarial_textures)
+        adversarial_textures = diff_rendering.normalisation(adversarial_textures)
 
         return adversarial_textures
 
