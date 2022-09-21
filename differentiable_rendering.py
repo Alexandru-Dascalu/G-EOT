@@ -64,7 +64,7 @@ def create_images(textures, uv_mappings, hyper_params, print_error_params=None):
     """
     # check if we should add print errors, so that the adversarial textures may be used for a 3D printed object
     # and still be effective
-    if hyper_params['PhotoError']:
+    if hyper_params['PrintError']:
         print_multiplier, print_addend = print_error_params
         textures = transform(textures, print_multiplier, print_addend)
 
