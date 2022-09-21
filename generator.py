@@ -83,7 +83,7 @@ def create_generator(num_experts):
     for idx in range(num_experts):
         subnet = deconv2d_bn(x, filters=128, kernel_size=3, strides=2, activation=relu)
         subnet = deconv2d_bn(subnet, filters=64, kernel_size=3, strides=2, activation=relu)
-        subnet = deconv2d_bn(subnet, filters=32, kernel_size=3, activation=relu)
+        subnet = deconv2d_bn(subnet, filters=32, kernel_size=3, strides=2, activation=relu)
         subnet = deconv2d_bn(subnet, filters=3, kernel_size=3, strides=2, activation=relu)
         subnets.append(tf.expand_dims(subnet, axis=-1))
 
