@@ -1,4 +1,6 @@
 import tensorflow as tf
+
+import layers
 from layers import conv2d_bn, depthwise_conv2d_bn, sep_conv2d_bn, deconv2d_bn
 
 relu = tf.keras.activations.relu
@@ -88,14 +90,15 @@ def create_generator(num_experts):
 
     subnets = tf.concat(subnets, axis=-1)
     weights = tf.keras.layers.Dense(units=num_experts, use_bias=True,
-                                    kernel_regularizer=None,
+                                    kernel_regularizer=None, kernel_initializer=layers.initialiser,
                                     activation=tf.keras.activations.softmax)(tf.one_hot(targets, 1000))
 
     subnets = tf.transpose(a=subnets, perm=[1, 2, 3, 0, 4])
     moe = tf.transpose(a= subnets * weights, perm=[3, 0, 1, 2, 4])
 
-    noises = (tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) - 0.5) * 2
+    noises = (tf.nn.tanh(tf.reduce_sum(input_tensor=moe, axis=-1)) - 0.5) * 2 * 25
     noises = tf.keras.layers.UpSampling2D(size=8, interpolation="bilinear")(noises)
+    noises = noises / 255
     print('Shape of Noises: ', noises.shape)
 
     return tf.keras.Model(inputs=[textures, targets], outputs=noises, name="generator")
