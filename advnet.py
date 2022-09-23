@@ -62,7 +62,7 @@ class AdvNet():
         self.simulator_accuracy_history = []
 
         self.test_loss_history = []
-        self.test_accuracy_history = []
+        self.test_tfr_history = []
 
     # define inference as hard label prediction of simulator on natural images
     @staticmethod
@@ -395,7 +395,7 @@ class AdvNet():
         total_ufr /= self._hyper_params['TestSteps']
 
         self.test_loss_history.append(total_loss)
-        self.test_accuracy_history.append(total_tfr)
+        self.test_tfr_history.append(total_tfr)
         print('\nTest: Loss: ', total_loss, '; TFR: ', total_tfr, '; UFR: ', total_ufr)
 
     def save(self, step):
@@ -403,7 +403,7 @@ class AdvNet():
         self.generator.save_weights('./generator/generator_checkpoint')
         np.savez('training_history', self.simulator_loss_history, self.simulator_accuracy_history,
                  self.generator_loss_history, self.generator_tfr_history, self.generator_l2_loss_history,
-                 self.test_loss_history, self.test_accuracy_history, [step])
+                 self.test_loss_history, self.test_tfr_history, [step])
 
     def load_model(self):
         """
@@ -431,30 +431,30 @@ class AdvNet():
             self.generator_l2_loss_history = array_dict['arr_3'].tolist()
             self.generator_tfr_history = array_dict['arr_4'].tolist()
             self.test_loss_history = array_dict['arr_5'].tolist()
-            self.test_accuracy_history = array_dict['arr_6'].tolist()
+            self.test_tfr_history = array_dict['arr_6'].tolist()
             step = array_dict['arr_7'][0]
             print("Training history restored.")
 
             return step
 
-    def plot_training_history(self, model, test_after):
+    def plot_training_history(self, test_after):
         plt.plot(self.simulator_loss_history, label="Simulator")
         plt.plot(self.generator_loss_history, label="Generator")
         test_steps = list(range(0, len(self.simulator_loss_history) + 1, test_after))
         plt.plot(test_steps, self.test_loss_history, label="Generator Test")
         plt.xlabel("Steps")
         plt.ylabel("Loss")
-        plt.title("{} loss history".format(model))
+        plt.title("G-EOT loss history")
         plt.legend()
         plt.show()
 
         plt.plot(self.simulator_accuracy_history, label="Simulator")
         plt.plot(self.generator_tfr_history, label="Generator")
         test_steps = list(range(0, len(self.simulator_accuracy_history) + 1, test_after))
-        plt.plot(test_steps, self.test_accuracy_history, label="Generator Test")
+        plt.plot(test_steps, self.test_tfr_history, label="Generator Test")
         plt.xlabel("Steps")
         plt.ylabel("TFR")
-        plt.title("{} TFR history".format(model))
+        plt.title("G-EOT TFR/Accuracy history")
         plt.legend()
         plt.show()
 
@@ -464,4 +464,4 @@ if __name__ == '__main__':
         data_generator = data.BatchGenerator()
 
         net.train(data_generator)
-        net.plot_training_history("Adversarial CIFAR10", net._hyper_params['ValidateAfter'])
+        net.plot_training_history(net._hyper_params['ValidateAfter'])
