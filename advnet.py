@@ -16,9 +16,7 @@ import differentiable_rendering as diff_rendering
 import generator
 import config
 
-NoiseRange = 10.0
 cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
-relu = tf.keras.activations.relu
 
 
 class AdvNet():
@@ -198,16 +196,6 @@ class AdvNet():
         accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
         print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
         return accuracy.numpy()
-
-    def get_uniform_image_noise(self):
-        uniform_noise = np.random.rand(self._hyper_params['BatchSize'], 299, 299, 3)
-        # scale noise from 0 to 1 to between -1 and 1
-        uniform_noise = (uniform_noise - 0.5) * 2.0
-        # scale noise up based on hyper param, then divide it so it can be added to an image with pixel values
-        # between 0 and 1
-        uniform_noise = (uniform_noise * NoiseRange) / 255.0
-
-        return uniform_noise
 
     # input texture must have pixel values between 0 and 1
     def generate_adversarial_texture(self, std_textures, target_labels, is_training):
