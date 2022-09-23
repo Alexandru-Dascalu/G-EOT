@@ -1,7 +1,7 @@
 import tensorflow as tf
 import config
 
-initialiser = tf.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform")
+initialiser = tf.keras.initializers.VarianceScaling(scale=10, mode="fan_avg", distribution="truncated_normal")
 l2_regulariser = tf.keras.regularizers.L2(config.hyper_params['LayerRegularisationWeight'])
 
 
