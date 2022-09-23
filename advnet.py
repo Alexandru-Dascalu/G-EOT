@@ -439,7 +439,8 @@ class AdvNet():
 
     def plot_training_history(self, test_after):
         plt.plot(self.simulator_loss_history, label="Simulator")
-        plt.plot(self.generator_loss_history, label="Generator")
+        plt.plot(self.generator_loss_history, label="Generator Main loss")
+        plt.plot(self.generator_l2_loss_history, label='Generator L2 loss')
         test_steps = list(range(0, len(self.simulator_loss_history) + 1, test_after))
         plt.plot(test_steps, self.test_loss_history, label="Generator Test")
         plt.xlabel("Steps")
