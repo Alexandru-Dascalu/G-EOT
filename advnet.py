@@ -171,11 +171,11 @@ class AdvNet():
         # evaluate warmed up simulator on test data
         warmup_accuracy = 0.0
         print("\nEvaluating warmed up simulator:")
-        for i in range(300):
+        for i in range(self._hyper_params['WarmupEvaluationSteps']):
             textures, uv_maps, _, _ = data_generator.get_next_batch()
             warmup_accuracy += self.warm_up_evaluation(textures, uv_maps)
 
-        warmup_accuracy = warmup_accuracy / 50
+        warmup_accuracy = warmup_accuracy / self._hyper_params['WarmupEvaluationSteps']
         print('\nAverage Warmup Accuracy: ', warmup_accuracy)
 
         # we do not want to plot the training history of the simulator during warmup, so we discard what it recorded

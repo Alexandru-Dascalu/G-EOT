@@ -16,6 +16,7 @@ hyper_params = {'BatchSize': 6,
                 'ValidateAfter': 500,
                 'TestSteps': 200,
                 'WarmupSteps': 1500,
+                'WarmupEvaluationSteps': 300,
                 'TotalSteps': 40000,
 
                 # renderer settings for object pose
