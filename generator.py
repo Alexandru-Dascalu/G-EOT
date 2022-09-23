@@ -57,7 +57,7 @@ def simpleNet_encoder(textures):
 
     # tensor is 16x16x768 now
     # entering exit flow, with one skip block and on final separable convolution
-    toadd = conv2d_bn(x, filters=1024, kernel_size=1, strides=2, activation=None)
+    toadd = conv2d_bn(x, filters=1536, kernel_size=1, strides=2, activation=None)
 
     x = tf.keras.layers.Activation(activation=relu)(x)
     x = sep_conv2d_bn(x, filters=1536, kernel_size=3, activation=relu)
