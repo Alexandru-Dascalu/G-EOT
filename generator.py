@@ -60,15 +60,15 @@ def simpleNet_encoder(textures):
     toadd = conv2d_bn(x, filters=1024, kernel_size=1, strides=2, activation=None)
 
     x = tf.keras.layers.Activation(activation=relu)(x)
-    x = sep_conv2d_bn(x, filters=1024, kernel_size=3, activation=relu)
-    x = sep_conv2d_bn(x, filters=1024, kernel_size=3, activation=None)
+    x = sep_conv2d_bn(x, filters=1536, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=1536, kernel_size=3, activation=None)
     x = tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same')(x)
     x = tf.keras.layers.Add()([x, toadd])
 
     # tensor is 8x8x1024 now
     # activate after adding skip connection toadd with unactivated x tensor
     x = tf.keras.layers.Activation(activation=relu)(x)
-    x = sep_conv2d_bn(x, filters=1536, kernel_size=3, activation=relu)
+    x = sep_conv2d_bn(x, filters=2048, kernel_size=3, activation=relu)
 
     return x
 
