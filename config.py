@@ -7,8 +7,9 @@ hyper_params = {'BatchSize': 5,
 
                 # constants related to learning rate and loss
                 'PenaltyWeight': 0.001,
-                'LearningRate': 0.004,
-                'DecayRate': 0.95,
+                'GeneratorLearningRate': 0.004,
+                'SimulatorLearningRate': 0.001,
+                'DecayRate': 0.98,
                 'DecayAfter': 300,
                 'LayerRegularisationWeight': 1e-4 * 0.5,
 
