@@ -5,7 +5,7 @@ gpu = tf.config.list_physical_devices('GPU')[0]
 tf.config.experimental.set_memory_growth(gpu, True)
 tf.config.set_logical_device_configuration(
     gpu,
-    [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
+    [tf.config.LogicalDeviceConfiguration(memory_limit=7400)])
 
 import numpy as np
 import os
