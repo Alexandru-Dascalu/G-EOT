@@ -16,7 +16,7 @@ hyper_params = {'BatchSize': 5,
                 # hyper params related to number of steps
                 'ValidateAfter': 500,
                 'TestSteps': 200,
-                'WarmupSteps': 1500,
+                'WarmupSteps': 2000,
                 'WarmupEvaluationSteps': 300,
                 'TotalSteps': 40000,
 

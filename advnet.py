@@ -43,8 +43,13 @@ class AdvNet():
         self.simulator = nets.create_simulator(architecture)
         self.simulator.summary()
 
+        sim_learning_rate_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=self._hyper_params['SimulatorLearningRate'],
+            decay_steps=self._hyper_params['DecayAfter'],
+            decay_rate=self._hyper_params['DecayRate'])
+
         self.generator_optimiser = tf.keras.optimizers.Adam(self._hyper_params['GeneratorLearningRate'], epsilon=1e-8)
-        self.simulator_optimiser = tf.keras.optimizers.Adam(self._hyper_params['SimulatorLearningRate'], epsilon=1e-8)
+        self.simulator_optimiser = tf.keras.optimizers.Adam(sim_learning_rate_schedule, epsilon=1e-8)
 
         # lists to save training history to
         self.generator_loss_history = []
