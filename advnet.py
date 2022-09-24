@@ -123,8 +123,7 @@ class AdvNet():
 
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on normal images
-                print('\rSimulator => Step: {}'.format(global_step), end='')
-                self.simulator_training_step(textures, uv_maps)
+                self.simulator_training_step(textures, uv_maps, global_step)
 
                 # we want simulator and generator training history to have the same number of elements, so we only keep
                 # the loss and accuracy when training the simulator on adversarial images
@@ -134,21 +133,20 @@ class AdvNet():
                 # perform one optimisation step to train simulator so it has the same predictions as the target
                 # model does on adversarial images.
                 textures = self.generate_adversarial_texture(textures, target_labels, is_training=False)
-                print('\rSimulator => Step: {}'.format(global_step), end='')
-                self.simulator_training_step(textures, uv_maps)
+                self.simulator_training_step(textures, uv_maps, global_step)
 
             # train generator for a couple of steps
             for _ in range(self._hyper_params['GeneratorSteps']):
                 textures, uv_maps, true_labels, target_labels = data_generator.get_next_batch()
-                print('\rGenerator => Step: {}'.format(global_step), end='')
-                self.generator_training_step(textures, uv_maps, target_labels)
+                generator_loss = self.generator_training_step(textures, uv_maps, target_labels)
 
                 enemy_labels = AdvNet.inference(self.enemy(2 * self.adv_images - 1, training=False))
                 tfr = np.mean(target_labels == enemy_labels.numpy())
                 ufr = AdvNet.get_ufr(true_labels, enemy_labels)
 
                 self.generator_tfr_history.append(tfr)
-                print('; TFR: %.3f' % tfr, '; UFR: %.3f' % ufr, end='')
+                print('\rGenerator => Step: {}; Loss: {}; TFR {}; UFR {}'.format(global_step, generator_loss, tfr,
+                                                                                 ufr), end='')
 
             # evaluate every so often
             if global_step % self._hyper_params['ValidateAfter'] == 0:
@@ -163,8 +161,7 @@ class AdvNet():
         for i in range(self._hyper_params['WarmupSteps']):
             textures, uv_maps, _, _ = data_generator.get_next_batch()
 
-            print('\rSimulator => Step: ', i - self._hyper_params['WarmupSteps'], end='')
-            self.simulator_training_step(textures, uv_maps)
+            self.simulator_training_step(textures, uv_maps, i - self._hyper_params['WarmupSteps'])
 
         # evaluate warmed up simulator on test data
         warmup_accuracy = 0.0
@@ -207,7 +204,7 @@ class AdvNet():
 
         return adversarial_textures
 
-    def simulator_training_step(self, textures, uv_maps):
+    def simulator_training_step(self, textures, uv_maps, step):
         # create rendering params and then render image. We do not need to differentiate through the rendering
         # for the simulator, therefore this can be done outside of the gradient tape.
         print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
@@ -219,7 +216,7 @@ class AdvNet():
         images = 2 * images - 1
 
         with tf.GradientTape() as simulator_tape:
-            sim_loss = self.simulator_loss(images)
+            sim_loss = self.simulator_loss(images, step)
 
         simulator_gradients = simulator_tape.gradient(sim_loss, self.simulator.trainable_variables)
         self.simulator_optimiser.apply_gradients(zip(simulator_gradients, self.simulator.trainable_variables))
@@ -233,6 +230,7 @@ class AdvNet():
         generator_gradients = [tf.clip_by_value(grad, -1.0, 1.0) for grad in generator_gradients]
 
         self.generator_optimiser.apply_gradients(zip(generator_gradients, self.generator.trainable_variables))
+        return gen_loss.numpy()
 
     # generator trains to produce perturbations that make the simulator produce the desired target label
     # input textures must have values between 0 and 1
@@ -269,12 +267,11 @@ class AdvNet():
 
         loss = main_loss + l2_penalty
         loss += tf.add_n(self.generator.losses)
-        print("; Loss: %.3f" % loss.numpy(), end='')
 
         return loss
 
     # images must have pixel values between -1 and 1
-    def simulator_loss(self, images):
+    def simulator_loss(self, images, step):
         simulator_logits = self.simulator(images, training=True)
         enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
 
@@ -283,11 +280,10 @@ class AdvNet():
         loss += tf.add_n(self.simulator.losses)
 
         self.simulator_loss_history.append(loss.numpy())
-        print("; Loss: %.3f" % loss.numpy(), end='')
 
         accuracy = AdvNet.accuracy(AdvNet.inference(simulator_logits), enemy_model_labels)
         self.simulator_accuracy_history.append(accuracy.numpy())
-        print("; Accuracy: %.3f" % accuracy.numpy(), end='')
+        print('\rSimulator => Step: {}; Loss: {}; Accuracy: {}'.format(step, loss.numpy(), accuracy.numpy()), end='')
         return loss
 
     # useful for testing if model.losses actually has all the correct losses
