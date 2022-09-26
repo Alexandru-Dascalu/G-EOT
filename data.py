@@ -197,7 +197,7 @@ class BatchGenerator():
 
         # loop until we have a random target label distinct from the true labels
         while True:
-            target_label = random.randint(0, 999)
+            target_label = random.randint(281, 290)
 
             # dog model has al 120+ dog breeds as true labels, so we need to check if the label is outside that range
             if ground_truth_labels == "dog":
