@@ -1,4 +1,6 @@
 /training_renders/
+/simulator/
+/generator/
 generator.png
 simulator.png
 
