@@ -1,6 +1,7 @@
 /training_renders/
 /simulator/
 /generator/
+training_history.npz
 generator.png
 simulator.png
 
