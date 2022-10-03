@@ -250,7 +250,6 @@ class AdvNet:
         print("\rAccuracy: %.3f" % accuracy.numpy(), end='')
         return accuracy.numpy()
 
-    # input texture must have pixel values between 0 and 1
     def generate_adversarial_texture(self, std_textures, target_labels, is_training):
         """
         Generates a new adversarial texture.
@@ -259,7 +258,7 @@ class AdvNet:
         ----------
         std_textures : numpy array
             4D array of shape [batch_size, 2048, 2048, 3]. The normal textures for which adversarial noise is
-            generated.
+            generated. Must have values between 0 and 1.
         target_labels : numpy array
             1D numpy array of ints of length batch_size. The target labels for which the adversarial noise is generated.
         is_training : bool
@@ -268,7 +267,7 @@ class AdvNet:
         Returns
         ----------
         tensor
-            4D tensor of shape [batch_size, 2048, 2048, 3]. The adversarial textures.
+            4D tensor of shape [batch_size, 2048, 2048, 3]. The adversarial textures, with values between 0 and 1.
         """
         # Textures must have values between -1 and 1 for the generator
         adversarial_noises = self.generator([2.0 * std_textures - 1.0, target_labels], training=is_training)
@@ -286,7 +285,7 @@ class AdvNet:
         ----------
         textures : numpy array or tensor
             4D array or tensor of shape [batch_size, 2048, 2048, 3]. The textures used for the rendered objects on
-            which the simulator will be trained.
+            which the simulator will be trained. Must have values between 0 and 1.
         uv_maps : numpy array
             1D numpy array of ints of length batch_size. The target labels for which the adversarial noise is generated.
         step : int
@@ -316,7 +315,7 @@ class AdvNet:
         ----------
         std_textures : numpy array
             4D array of shape [batch_size, 2048, 2048, 3]. The normal textures for which adversarial noise is
-            generated.
+            generated. Must have values between 0 and 1.
         uv_maps : numpy array
             4D array of shape [batch_sisze, image_size, image_size, 2]. The UV maps used to create rendered images with
             the adversarial texture, which are then meant to fool the simulator.
@@ -338,8 +337,6 @@ class AdvNet:
         self.generator_optimiser.apply_gradients(zip(generator_gradients, self.generator.trainable_variables))
         return gen_loss.numpy()
 
-    # generator trains to produce perturbations that make the simulator produce the desired target label
-    # input textures must have values between 0 and 1
     def generator_loss(self, textures, uv_maps, target_labels):
         """
         Calculates the generator loss.
@@ -348,9 +345,9 @@ class AdvNet:
         ----------
         textures : numpy array or tensor
             4D array/tensor of shape [batch_size, 2048, 2048, 3]. The textures for which the generator needs to create
-            adversarial noise.
+            adversarial noise. Must have values between 0 and 1.
         uv_maps : numpy array
-            4D array of shape [batch_sisze, image_size, image_size, 2]. The UV maps used to create rendered images with
+            4D array of shape [batch_size, image_size, image_size, 2]. The UV maps used to create rendered images with
             the adversarial texture.
         target_labels : numpy array
             1D numpy array of ints of length batch_size. The target labels for which the adversarial noise is generated.
@@ -397,6 +394,22 @@ class AdvNet:
 
     # images must have pixel values between -1 and 1
     def simulator_loss(self, images, step):
+        """
+        Calculates the simulator loss.
+
+        Parameters
+        ----------
+        images : tensor
+            4D array/tensor of shape [batch_size, 2048, 2048, 3]. The images that the simulator is trained on. Must
+            have values between 0 and 1.
+        step : int
+            The current training step. Used for printing information to the command line.
+
+        Returns
+        ----------
+        tensor
+            1D tensor with the mean value of the loss across the batch.
+        """
         simulator_logits = self.simulator(images, training=True)
         enemy_model_labels = AdvNet.inference(self.enemy(images, training=False))
 
@@ -426,15 +439,18 @@ class AdvNet:
 
     @staticmethod
     def get_normalised_lab_image(rgb_images):
-        """Turn a tensor representing a batch of normalised RGB images into equivalent normalised images in the LAB
+        """
+        Turn a tensor representing a batch of normalised RGB images into equivalent normalised images in the LAB
         colour space.
 
         Parameters
         ----------
-        rgb_images : 4D numpy array of size batch_size x 299 x 299 x 3
-            The image which we want to convert to LAB space. Each value in it must be between 0 and 1.
+        rgb_images : numpy array
+            The image which we want to convert to LAB space. Each value in it must be between 0 and 1. Is a 4D numpy
+            array of size batch_size x 299 x 299 x 3
         Returns
         -------
+        tensor
             A 4-D numpy array with shape [batch_size, 299, 299, 3] and with values between 0 and 1.
         """
         assert rgb_images.shape[1] == 299
@@ -456,16 +472,15 @@ class AdvNet:
 
     def evaluate(self, test_data_generator):
         """
-        Evaluates trained (or in training) model across several minibatches from the test set. The number of batches is
-        a hyper param of the Net subclass.
+        Evaluates trained (or in training) model across several minibatches of never before seen data. The number of
+        batches is a hyper param of the Net subclass.
 
         Parameters
         ----------
-        test_data_generator : generator
-            Generator which returns each step a tuple with two tensors: the first is the mini-batch of test images, and
-            the second is a list of their coresponding hard labels.
-        path : string
-            Path to checkpoint with weights of pre-trained model that we want to evaluate
+        test_data_generator : BatchGenerator
+            Generator which returns each step a tuple with four values: the textures of different 3D objects, UV maps
+            for transforming those textures into rendered images of those objects, the correct labels for each sampled
+            object, and a randomly chosen target label for each sample.
         """
         total_loss = 0.0
         total_tfr = 0.0
@@ -508,6 +523,14 @@ class AdvNet:
         print('\nTest: Loss: ', total_loss, '; TFR: ', total_tfr, '; UFR: ', total_ufr)
 
     def save(self, step):
+        """
+        Save model parameters and the training history.
+
+        Parameters
+        ----------
+        step : int
+            The current training step.
+        """
         self.simulator.save_weights('./simulator/simulator_checkpoint')
         self.generator.save_weights('./generator/generator_checkpoint')
         np.savez('training_history', self.simulator_loss_history, self.simulator_accuracy_history,
@@ -516,11 +539,13 @@ class AdvNet:
 
     def load_model(self):
         """
-        Restores model variables from a file at the given path.
-        Parameters
-        ----------
-        path : String
-            Path to file containing saved variables.
+        Restores model parameters and the training history.
+
+        Returns
+        -------
+        int
+            The number of steps saved in the files, when training was previously stopped. This should be used to resume
+            training.
         """
         self.simulator.load_weights('./simulator/simulator_checkpoint')
         self.generator.load_weights('./generator/generator_checkpoint')
@@ -529,6 +554,18 @@ class AdvNet:
         return old_global_step
 
     def load_training_history(self, path):
+        """
+        Load training history from .npz file.
+
+        Parameters
+        ----------
+        path : str
+            Absolute path to th .npz file.
+        Returns
+        -------
+        int
+            The number of training steps when the training history was saved.
+        """
         assert type(path) is str
 
         if os.path.exists(path):
@@ -546,11 +583,14 @@ class AdvNet:
 
             return step
 
-    def plot_training_history(self, test_after):
+    def plot_training_history(self):
+        """
+        Plot training history.
+        """
         plt.plot(self.simulator_loss_history, label="Simulator")
         plt.plot(self.generator_loss_history, label="Generator Main loss")
         plt.plot(self.generator_l2_loss_history, label='Generator L2 loss')
-        test_steps = list(range(0, len(self.simulator_loss_history) + 1, test_after))
+        test_steps = list(range(0, len(self.simulator_loss_history) + 1, self._hyper_params['ValidateAfter']))
         plt.plot(test_steps, self.test_loss_history, label="Generator Test")
         plt.xlabel("Steps")
         plt.ylabel("Loss")
@@ -560,7 +600,7 @@ class AdvNet:
 
         plt.plot(self.simulator_accuracy_history, label="Simulator")
         plt.plot(self.generator_tfr_history, label="Generator")
-        test_steps = list(range(0, len(self.simulator_accuracy_history) + 1, test_after))
+        test_steps = list(range(0, len(self.simulator_accuracy_history) + 1, self._hyper_params['ValidateAfter']))
         plt.plot(test_steps, self.test_tfr_history, label="Generator Test")
         plt.xlabel("Steps")
         plt.ylabel("TFR")
@@ -568,10 +608,11 @@ class AdvNet:
         plt.legend()
         plt.show()
 
+
 if __name__ == '__main__':
     with tf.device("/GPU:0"):
         net = AdvNet("SimpleNet")
         model_3d_data_generator = data.BatchGenerator()
 
         net.train(model_3d_data_generator)
-        net.plot_training_history(net._hyper_params['ValidateAfter'])
+        net.plot_training_history()

@@ -27,6 +27,14 @@ def create_simulator(architecture):
 
 
 def get_Simple_Net():
+    """
+    Creates G-EOT simulator model with the SimpleNet architecture.
+
+    Returns
+    -------
+    model
+        The SimpleNet simulator as a tf.keras.Model instance.
+    """
     # input images must have values between -1 and 1
     input_images = tf.keras.layers.Input(shape=(299, 299, 3), dtype=tf.float32)
     # initial three layers in entry flow

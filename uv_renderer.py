@@ -15,6 +15,8 @@ class UVRenderer:
 
         Parameters
         ----------
+        models : list
+            List of Model3D objects. The 3D models for which this renderer creates UV maps.
         viewport : tuple(int, int)
             width and height of the rendered image.
         """
@@ -76,6 +78,14 @@ class UVRenderer:
         self.load_vaos(models)
 
     def load_vaos(self, models):
+        """
+        Loads the vertex arrays of the 3D models into this renderer.
+
+        Parameters
+        ----------
+        models : list
+            List of Model3D objects.
+        """
         for model in models:
             obj_model = Obj.open(model.obj_path)
             self.model_vaos.append(self.ctx.simple_vertex_array(
@@ -155,21 +165,21 @@ class UVRenderer:
 
     def render(self, model_index, i=0, save_render=False):
         """
-        Render a batch of images of the obj_3d, each time in a different random pose, and returns the UV mappings for
-        each.
+        Render one image of a 3D object, in a random pose, and returns the UV map.
 
         Parameters
         ----------
+        model_index : int
+            Index of the model for which a UV map should be created.
         i : int
             Number of uv mapping in batch. Used when naming the saved image the rendered image used for the uv map.
             Only used if save_render is True, defaults to 0.
-        save_render : Bool
-            Wether the textureless renders used for computing the UV mappings should be saved as images. Defaults to
-            False.
+        save_render : bool
+            Whether the UV maps should be saved as images. Defaults to False.
         Returns
         -------
         warp
-            Numpy array representing the UV mapping.
+            Numpy array representing the UV map.
         """
         # make vertex array from objloader.Obj object with two attributes, in_vert as vec3 and in_text as vec_2
         self.vao = self.model_vaos[model_index]

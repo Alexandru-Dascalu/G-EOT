@@ -5,8 +5,21 @@ from layers import conv2d_bn, depthwise_conv2d_bn, sep_conv2d_bn, deconv2d_bn
 
 relu = tf.keras.activations.relu
 
-# input must be normalised textures
+
 def simpleNet_encoder(textures):
+    """
+    Passes input textures through the generator's encoder
+
+    Parameters
+    ----------
+    textures : tensor
+        4D tensor with shape [batch_size, 2048, 2048, 3]. Represents the input textures for which the generator creates
+        adversarial noise. Must have values between -1 and 1.
+    Returns
+    -------
+    tensor
+        Tensor representing encoded feature maps.
+    """
     # textures are 2048x2048
     x = tf.keras.layers.AvgPool2D(pool_size=8)(textures)
     # textures are 256x256 now
@@ -74,6 +87,18 @@ def simpleNet_encoder(textures):
 
 
 def create_generator(num_experts):
+    """
+    Creates G-EOT generator model.
+
+    Parameters
+    ----------
+    num_experts : 50
+        Number of experts used in the mixture-of-experts for target label specific adversarial noise.
+    Returns
+    -------
+    model
+        The generator as a tf.keras.Model instance.
+    """
     textures = tf.keras.layers.Input(shape=(2048, 2048, 3), dtype=tf.float32)
     targets = tf.keras.layers.Input(shape=(), dtype=tf.int64)
     x = simpleNet_encoder(textures)

@@ -89,6 +89,18 @@ def add_background(images, uv_maps, background_colour):
 
 
 def get_background_colours(hyper_params):
+    """
+    Generates random background colours.
+
+    Parameters
+    ----------
+    hyper_params : dict
+        A dictionary with hyper parameters.
+    Returns
+    -------
+    tensor
+        Tensor of shape batch_size x 1 x 1 x 3, background colours for each of the images in the batch.
+    """
     return tf.random.uniform([hyper_params['BatchSize'], 1, 1, 3], hyper_params['MinBackgroundColour'],
                              hyper_params['MaxBackgroundColour'])
 
@@ -119,6 +131,19 @@ def set_background(images, mask, colours):
 
 
 def get_print_error_args(hyper_params):
+    """
+    Generates random parameters for linearly scaling the textures, to simulate print errors.
+
+    Parameters
+    ----------
+    hyper_params : dict
+        A dictionary with hyper parameters.
+    Returns
+    -------
+    tuple
+        Tuple with two values. First is a tensor of shape [batch_size, 1, 1, 3], which is the per-channel multiplier,
+        and the second is a tensor of shape [batch_size, 1, 1, 3], which the per-channel addend.
+    """
     multiplier = tf.random.uniform(
         [hyper_params['BatchSize'], 1, 1, 3],
         hyper_params['PrintErrorMultMin'],
@@ -161,6 +186,20 @@ def apply_photo_error(images, photo_error_params):
 
 
 def get_photo_error_args(hyper_params):
+    """
+    Generates random parameters for additive and multiplicative lighting and for camera noise.
+
+    Parameters
+    ----------
+    hyper_params : dict
+        A dictionary with hyper parameters.
+    Returns
+    -------
+    tuple
+        Tuple with three values. First is a tensor of shape [batch_size, 1, 1, 1], which is lighting multiplier,
+        the second is a tensor of shape [batch_size, 1, 1, 1], which is the additive lighting factor, and the third has
+        shape [batch_size, image_szie, image_size, 3], and is the noise simulating camera noise.
+    """
     multiplier = tf.random.uniform(
         [hyper_params['BatchSize'], 1, 1, 1],
         hyper_params['PhotoErrorMultMin'],
