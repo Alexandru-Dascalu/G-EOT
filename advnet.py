@@ -5,7 +5,7 @@ gpu = tf.config.list_physical_devices('GPU')[0]
 tf.config.experimental.set_memory_growth(gpu, True)
 tf.config.set_logical_device_configuration(
     gpu,
-    [tf.config.LogicalDeviceConfiguration(memory_limit=7400)])
+    [tf.config.LogicalDeviceConfiguration(memory_limit=3800)])
 
 import numpy as np
 import os
@@ -19,7 +19,7 @@ import config
 cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits
 
 
-class AdvNet():
+class AdvNet:
 
     def __init__(self, architecture, hyper_params=None):
         if hyper_params is None:
@@ -62,7 +62,6 @@ class AdvNet():
         self.test_loss_history = []
         self.test_tfr_history = []
 
-    # define inference as hard label prediction of simulator on natural images
     @staticmethod
     def inference(logits):
         """
@@ -81,11 +80,41 @@ class AdvNet():
         return tf.argmax(input=logits, axis=-1, name='inference')
 
     @staticmethod
-    def accuracy(predictions, labels):
-        return tf.reduce_mean(input_tensor=tf.cast(tf.equal(predictions, labels), dtype=tf.float32))
+    def accuracy(predictions, true_labels):
+        """
+        Computes classification accuracy of predictions.
+
+        Parameters
+        ----------
+        predictions : Tensor
+            1D tensor representing the hard-label predictions of the NN on some images.
+        true_labels : Tensor
+            1D tensor with the ground truth labels of the images.
+
+        Returns
+        ----------
+        tensor
+            A tensor with one element: the classification accuracy, as a float value from 0 to 1.
+        """
+        return tf.reduce_mean(input_tensor=tf.cast(tf.equal(predictions, true_labels), dtype=tf.float32))
 
     @staticmethod
-    def get_ufr(true_labels, predictions):
+    def get_ufr(predictions, true_labels):
+        """
+        Computes UFR of adversarial images based on predictions of the enemy model on those images.
+
+        Parameters
+        ----------
+        predictions : Tensor
+            1D tensor representing the hard-label predictions of the NN on the adversarial images.
+        true_labels : Tensor
+            1D tensor with the ground truth labels of the images.
+
+        Returns
+        ----------
+        tensor
+            A tensor with one element: the UFR, as a float value from 0 to 1.
+        """
         are_predictions_correct = [data.is_prediction_true(ground_truth, prediction) for ground_truth, prediction in
                                    zip(true_labels, predictions)]
         # negate accuracy of each prediction, because we want to measure ufr, not accuracy
@@ -103,7 +132,7 @@ class AdvNet():
             Generator which returns each step a tuple with two tensors: the first is the mini-batch of training images,
             and the second is a list of their coresponding hard labels.
         load_checkpoint : bool
-            Wether to restore simulator and generator weights from checkpoints. False by default.
+            Whether to restore simulator and generator weights from checkpoints. False by default.
         """
         print("\n Begin Training: \n")
 
@@ -142,7 +171,7 @@ class AdvNet():
 
                 enemy_labels = AdvNet.inference(self.enemy(2 * self.adv_images - 1, training=False))
                 tfr = np.mean(target_labels == enemy_labels.numpy())
-                ufr = AdvNet.get_ufr(true_labels, enemy_labels)
+                ufr = AdvNet.get_ufr(enemy_labels, true_labels)
 
                 self.generator_tfr_history.append(tfr)
                 print('\rGenerator => Step: {}; Loss: {}; TFR {}; UFR {}'.format(global_step, generator_loss, tfr,
@@ -156,6 +185,15 @@ class AdvNet():
             global_step += 1
 
     def warm_up_simulator(self, data_generator):
+        """
+        Warms up the simulator by training it on normal images.
+
+        Parameters
+        ----------
+        data_generator : BatchGenerator
+            Generator used to create new batches of data samples.
+        """
+
         # warm up simulator to match predictions of target model on clean images
         print('Warming up. ')
         for i in range(self._hyper_params['WarmupSteps']):
@@ -178,6 +216,24 @@ class AdvNet():
         self.simulator_accuracy_history = []
 
     def warm_up_evaluation(self, textures, uv_maps):
+        """
+        Evaluates the warmed up simulator on normal images.
+
+        Parameters
+        ----------
+        textures : Tensor
+            4D tensor of shape [batch_size, 2048, 2048, 3] with the textures of the objects that will be rendered to
+            creates images to evaluate the simulator on.
+        uv_maps : Tensor
+            4D of shape [batch_size, image_size, image_size, 3] tensor with the UV maps used to render images of the
+            3D objects.
+
+        Returns
+        ----------
+        numpy array
+            Numpy array with one scalar value, the accuracy of the simulator predicting the same labels as the enemy
+            model.
+        """
         print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
         photo_error_params = diff_rendering.get_photo_error_args(self._hyper_params)
         background_colours = diff_rendering.get_background_colours(self._hyper_params)
@@ -196,6 +252,24 @@ class AdvNet():
 
     # input texture must have pixel values between 0 and 1
     def generate_adversarial_texture(self, std_textures, target_labels, is_training):
+        """
+        Generates a new adversarial texture.
+
+        Parameters
+        ----------
+        std_textures : numpy array
+            4D array of shape [batch_size, 2048, 2048, 3]. The normal textures for which adversarial noise is
+            generated.
+        target_labels : numpy array
+            1D numpy array of ints of length batch_size. The target labels for which the adversarial noise is generated.
+        is_training : bool
+            Whether this method is called when training the generator, or not.
+
+        Returns
+        ----------
+        tensor
+            4D tensor of shape [batch_size, 2048, 2048, 3]. The adversarial textures.
+        """
         # Textures must have values between -1 and 1 for the generator
         adversarial_noises = self.generator([2.0 * std_textures - 1.0, target_labels], training=is_training)
 
@@ -205,6 +279,19 @@ class AdvNet():
         return adversarial_textures
 
     def simulator_training_step(self, textures, uv_maps, step):
+        """
+        Performs one training step for the simulator.
+
+        Parameters
+        ----------
+        textures : numpy array or tensor
+            4D array or tensor of shape [batch_size, 2048, 2048, 3]. The textures used for the rendered objects on
+            which the simulator will be trained.
+        uv_maps : numpy array
+            1D numpy array of ints of length batch_size. The target labels for which the adversarial noise is generated.
+        step : int
+            The current training step.
+        """
         # create rendering params and then render image. We do not need to differentiate through the rendering
         # for the simulator, therefore this can be done outside of the gradient tape.
         print_error_params = diff_rendering.get_print_error_args(self._hyper_params)
@@ -222,6 +309,25 @@ class AdvNet():
         self.simulator_optimiser.apply_gradients(zip(simulator_gradients, self.simulator.trainable_variables))
 
     def generator_training_step(self, std_textures, uv_maps, target_labels):
+        """
+        Performs one training step for the generator.
+
+        Parameters
+        ----------
+        std_textures : numpy array
+            4D array of shape [batch_size, 2048, 2048, 3]. The normal textures for which adversarial noise is
+            generated.
+        uv_maps : numpy array
+            4D array of shape [batch_sisze, image_size, image_size, 2]. The UV maps used to create rendered images with
+            the adversarial texture, which are then meant to fool the simulator.
+        target_labels : numpy array
+            1D numpy array of ints of length batch_size. The target labels for which the adversarial noise is generated.
+
+        Returns
+        ----------
+        numpy array
+            Numpy array with scalar values. Is the mean loss of the generator.
+        """
         with tf.GradientTape() as generator_tape:
             gen_loss = self.generator_loss(std_textures, uv_maps, target_labels)
 
@@ -235,6 +341,25 @@ class AdvNet():
     # generator trains to produce perturbations that make the simulator produce the desired target label
     # input textures must have values between 0 and 1
     def generator_loss(self, textures, uv_maps, target_labels):
+        """
+        Calculates the generator loss.
+
+        Parameters
+        ----------
+        textures : numpy array or tensor
+            4D array/tensor of shape [batch_size, 2048, 2048, 3]. The textures for which the generator needs to create
+            adversarial noise.
+        uv_maps : numpy array
+            4D array of shape [batch_sisze, image_size, image_size, 2]. The UV maps used to create rendered images with
+            the adversarial texture.
+        target_labels : numpy array
+            1D numpy array of ints of length batch_size. The target labels for which the adversarial noise is generated.
+
+        Returns
+        ----------
+        tensor
+            1D tensor with the mean value of the loss across the batch.
+        """
         adv_textures = self.generate_adversarial_texture(textures, target_labels, is_training=True)
 
         # generate rendering params common to both the standard and adversarial images
@@ -368,7 +493,7 @@ class AdvNet():
             main_loss = tf.reduce_mean(main_loss)
 
             tfr = np.mean(target_labels == enemy_labels.numpy())
-            ufr = AdvNet.get_ufr(true_labels, enemy_labels)
+            ufr = AdvNet.get_ufr(enemy_labels, true_labels)
 
             total_loss += main_loss.numpy()
             total_tfr += tfr
@@ -446,7 +571,7 @@ class AdvNet():
 if __name__ == '__main__':
     with tf.device("/GPU:0"):
         net = AdvNet("SimpleNet")
-        data_generator = data.BatchGenerator()
+        model_3d_data_generator = data.BatchGenerator()
 
-        net.train(data_generator)
+        net.train(model_3d_data_generator)
         net.plot_training_history(net._hyper_params['ValidateAfter'])

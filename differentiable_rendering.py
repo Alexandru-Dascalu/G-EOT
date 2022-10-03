@@ -1,11 +1,13 @@
-import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_addons as tfa
 
 
 def render(textures, uv_mappings, print_error_params, photo_error_params, background_colour, hyper_params):
-    """Use UV mapping to create batch_seize images with both the normal and adversarial texture. UV mapping is the
-    matrix M used to transfor texture x into the image with rendered object, as explained in the paper.
+    """
+    Use UV mapping to create images of an object with both the normal and adversarial texture. Each image with
+    normal texture has an equivalent image with the same object pose and background, the only difference is that it uses
+    the adversarial texture instead. UV mapping is the matrix M used to transform texture x into the image with
+    rendered object, as explained in the paper.
 
     Returns
     -------
@@ -16,35 +18,18 @@ def render(textures, uv_mappings, print_error_params, photo_error_params, backgr
 
     # add background colour to rendered images.
     new_images = add_background(new_images, uv_mappings, background_colour)
-    # plt.imshow(new_images.numpy()[0])
-    # plt.imshow(new_images.numpy()[1])
-    # plt.imshow(new_images.numpy()[2])
-    # plt.imshow(new_images.numpy()[3])
-    # plt.imshow(new_images.numpy()[4])
-    # plt.imshow(new_images.numpy()[5])
 
     # check if we apply random noise to simulate camera noise
     if hyper_params['PhotoError']:
         new_images = apply_photo_error(new_images, photo_error_params)
-        # plt.imshow(new_images.numpy()[0])
-        # plt.imshow(new_images.numpy()[1])
-        # plt.imshow(new_images.numpy()[2])
-        # plt.imshow(new_images.numpy()[3])
-        # plt.imshow(new_images.numpy()[4])
-        # plt.imshow(new_images.numpy()[5])
 
     new_images = normalisation(new_images)
-    # plt.imshow(new_images.numpy()[0])
-    # plt.imshow(new_images.numpy()[1])
-    # plt.imshow(new_images.numpy()[2])
-    # plt.imshow(new_images.numpy()[3])
-    # plt.imshow(new_images.numpy()[4])
-    # plt.imshow(new_images.numpy()[5])
     return new_images
 
 
 def create_images(textures, uv_mappings, hyper_params, print_error_params=None):
-    """Create an image from the given texture using the given UV mapping.
+    """
+    Create standard and adversarial images from the respective textures using the given UV map.
 
     Parameters
     ----------
@@ -75,11 +60,30 @@ def create_images(textures, uv_mappings, hyper_params, print_error_params=None):
     return new_images
 
 
-def add_background(images, uv_mappings, background_colour):
-    """Colours the background pixels of the image with a random colour.
+def add_background(images, uv_maps, background_colour):
+    """
+    Colours the background pixels of the image with the given colour. Each image with the normal texture will have the
+    same background as its adversarial counterpart.
+
+    Parameters
+    ----------
+    images : tensor
+        A tensor with shape [batch_size, image_height, image_width, 3]. Represents the new rendered images to which the
+        background will be applied.
+    uv_maps : numpy array
+        A numpy array with shape [batch_size, image_height, image_width, 2]. Represents the UV maps that were used to
+        create the batch of new images.
+    background_colour : tensor
+        Tensor with shape [batch_size, 1, 1, 3]. Holds the background colours for to be applied to each image.
+
+    Returns
+    -------
+    tensor
+        Tensor of shape batch_size x 299 x 299 x 3, representing the rendered images of the object, now with a coloured
+        background.
     """
     # compute a mask with True values for each pixel which represents the object, and False for background pixels.
-    mask = tf.reduce_all(input_tensor=tf.not_equal(uv_mappings, 0.0), axis=3, keepdims=True)
+    mask = tf.reduce_all(input_tensor=tf.not_equal(uv_maps, 0.0), axis=3, keepdims=True)
 
     return set_background(images, mask, background_colour)
 
@@ -89,23 +93,29 @@ def get_background_colours(hyper_params):
                              hyper_params['MaxBackgroundColour'])
 
 
-def set_background(x, mask, colours):
-    """Sets background color of an image according to a boolean mask.
+def set_background(images, mask, colours):
+    """
+    Sets background color of an image according to a boolean mask.
 
     Parameters
     ----------
-        x: A 4-D tensor with shape [batch_size, height, size, 3]
-            The images to which a background will be added.
-        mask: boolean mask with shape [batch_size, height, width, 1]
-            The mask used for determining where are the background pixels. Has False for background pixels,
-            True otherwise.
-        colours: tensor with shape [batch_size, 1, 1, 3].
-            The background colours for each image
+    images: tensor
+        The images to which a background will be added. A 4-D tensor with shape [batch_size, height, width, 3].
+    mask: tensor
+        The mask used for determining where are the background pixels. Has False for background pixels, True otherwise.
+        Has shape [batch_size, height, width, 1].
+    colours: tensor with shape [batch_size, 1, 1, 3].
+        The background colours for each image. Has shape [batch_size, 1, 1, 3].
+
+    Returns
+    -------
+    tensor
+        Tensor with rendered images with a coloured background.
     """
     mask = tf.tile(mask, [1, 1, 1, 3])
     inverse_mask = tf.logical_not(mask)
 
-    return tf.cast(mask, tf.float32) * x + tf.cast(inverse_mask, tf.float32) * colours
+    return tf.cast(mask, tf.float32) * images + tf.cast(inverse_mask, tf.float32) * colours
 
 
 def get_print_error_args(hyper_params):
@@ -124,6 +134,25 @@ def get_print_error_args(hyper_params):
 
 
 def apply_photo_error(images, photo_error_params):
+    """
+    Applies photo error to a abtch of images. It will linearly scale each image to lighten or darken it, then add
+    gaussian noise to simulate camera noise.
+
+    Parameters
+    ----------
+    images : tensor
+        The images of the object. A 4-D tensor with shape [batch_size, texture_height, texture_width, 3].
+    photo_error_params : tuple
+        Tuple with the photo error params. The first element is a 4-D tensor with shape [batch_size, 1, 1, 1], which is
+        lighting multiplier. The second element is the lighting addend, and it is a 4-D tensor with shape
+        [batch_size, 1, 1, 1]. The third is the gaussian noise simulating the camera noise, and is a tensor of shape
+        [batch_size, 299, 299, 3].
+
+    Returns
+    -------
+    tensor
+        Tensor of shape num_new_renders x 299 x 299 x 3, representing the images with the photo error applied to them.
+    """
     multiplier, addend, noise = photo_error_params
     images = transform(images, multiplier, addend)
     images += noise
@@ -153,22 +182,37 @@ def get_photo_error_args(hyper_params):
 
 
 def transform(x, a, b):
-    """Apply transform a * x + b element-wise.
+    """
+    Apply transform a * x + b element-wise.
 
-     Parameters
+    Parameters
     ----------
-        x : tensor
-        a : tensor
-        b : tensor
+    x : tensor
+    a : tensor
+    b : tensor
     """
     return tf.add(tf.multiply(a, x), b)
 
 
-def normalisation(x):
-    minimum = tf.reduce_min(input_tensor=x, axis=[1, 2, 3], keepdims=True)
-    maximum = tf.reduce_max(input_tensor=x, axis=[1, 2, 3], keepdims=True)
+def normalisation(images):
+    """
+    Normalises rendered images of the object, as after the rendering process, pixel values may be outside [0, 1].
+    This method performs linear normalisation, though if an image does not have invalid values, it will not be scaled.
+
+    Parameters
+    ----------
+    images : tensor
+        The images of the object. A 4-D tensor with shape [batch_size, texture_height, texture_width, 3].
+
+    Returns
+    -------
+    tensor
+        Tensor of shape batch_size x 299 x 299 x 3, representing the normalised images.
+    """
+    minimum = tf.reduce_min(input_tensor=images, axis=[1, 2, 3], keepdims=True)
+    maximum = tf.reduce_max(input_tensor=images, axis=[1, 2, 3], keepdims=True)
 
     minimum = tf.minimum(minimum, 0)
     maximum = tf.maximum(maximum, 1)
 
-    return (x - minimum) / (maximum - minimum)
+    return (images - minimum) / (maximum - minimum)
