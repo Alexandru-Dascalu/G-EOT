@@ -1,2 +1,2 @@
-# GAN-EOT
-Code for MSc Advanced Computer Science project
+# G-EOT
+Code for my MSc project. Dissertation is at https://github.com/Alexandru-Dascalu/G-EOT-Dissertation .
